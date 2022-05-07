@@ -1,18 +1,20 @@
-# -*- coding: utf-8 -*-
+""" Command base class. """
+
 __author__ = "Mariano Jose Abdala"
 __version__ = "0.1.0"
 
 from devopscenter.base import Base
-from devopscenter.modules.kube.pod import PodInfo
+from devopscenter.modules.kube.models.pod import PodInfo
 
 
 class BaseCmd(Base):
     """
-    Base class that is used as base for the commands.
+        Class that is used as base for the commands and contains common logic.
     """
 
-    def __init__(self) -> None:
-        super().__init__()
+    def execute(self, args: None) -> None:  # pylint: disable=unused-argument
+        """ Default execute when the command is not found. """
+        self.print("Command not found!!!")
 
     def get_pod(self, pod_index, pods) -> PodInfo:
         """

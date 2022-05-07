@@ -1,9 +1,8 @@
-# -*- coding: utf-8 -*-
+""" Pods Module that will handle any pod command"""
 __author__ = "Mariano Jose Abdala"
 __version__ = "0.1.0"
 
 from rich.table import Table, Column
-from typing import List
 from devopscenter.modules.kube.cluster_utils import get_pods
 from devopscenter.modules.kube.namespace.commands.base_cmd import BaseCmd
 
@@ -11,14 +10,13 @@ from devopscenter.modules.kube.namespace.commands.base_cmd import BaseCmd
 class PodCmd(BaseCmd):
     """Manage the pods."""
 
-    def __init__(self, context, core, namespace):
+    def __init__(self, core, namespace):
         """Initialize a new pod command."""
         super().__init__()
         self.core = core
         self.namespace = namespace
-        self.context = context
 
-    def execute(self, args=None) -> List:
+    def execute(self, args: None) -> None:
         pods = get_pods(self.core, self.namespace)
         table = Table(
             Column("N°", style="blue"),
@@ -33,7 +31,8 @@ class PodCmd(BaseCmd):
                 for index_container, item in enumerate(containers.items()):
                     container_name, container_info = item
                     info = container_info["state"] + (
-                        ("-" + container_info["info"]) if container_info["info"] else ""
+                        ("-" + container_info["info"]
+                         ) if container_info["info"] else ""
                     )  # pylint: disable=line-too-long
                     table.add_row(
                         f"{str(index)}.{index_container}",
@@ -44,4 +43,3 @@ class PodCmd(BaseCmd):
                     )
 
         self.print(table)
-        return pods

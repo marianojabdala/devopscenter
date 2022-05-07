@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+""" Constants used on the system. """
+
 __author__ = "Mariano Jose Abdala"
 __version__ = "0.1.0"
 

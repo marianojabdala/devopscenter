@@ -2,8 +2,13 @@
 
 # Devops Center.
 
-This application is meant to be used as a central point of all the activities 
+This application is meant to be used as a central point of the activities
 that a devops use day by day.
+
+For now the only command is kube, this command allows to use some cluster commands that will be useful by anyone and
+is tired to type kubectl all the time o make some alias with kubectl.
+
+This tool was inspired on the user interface of [pwdcat](https://github.com/calebstewart/pwncat) tool used on pentesting.
 
 
 ### Pre-requisites
@@ -57,7 +62,14 @@ to the ones that use  cygwin, that will be the same.
     ```bash
     devopscenter
     ```
+in the console just type kube to see the clusters to use.
 
-in the console just type kube 
+## Screenshots
+### Contexts
+![alt text](images/contexts.png)
 
-and yo can see the clusters to use
+### Commands in contexts
+![alt text](images/commands_in_context.png)
+
+### Namespaces
+![alt text](images/namespaces.png)

@@ -1,3 +1,5 @@
+""" Entrypint used when the package is installed"""
+
 from devopscenter.devops_center import Manager
 
 

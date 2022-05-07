@@ -1,12 +1,14 @@
-# -*- coding: utf-8 -*-
+""" Module that get the resources usage from the metrics server. """
+
 __author__ = "Mariano Jose Abdala"
 __version__ = "0.1.0"
+
 from operator import itemgetter
 from rich.table import Table, Column
 
 from devopscenter.modules.kube.views.base_view import ViewBase
-from devopscenter.modules.kube.cluster_utils import convertToMi
-from devopscenter.modules.kube.cluster_utils import convertToMilicore
+from devopscenter.modules.kube.cluster_utils import convert_to_mi
+from devopscenter.modules.kube.cluster_utils import convert_to_milicore
 
 
 class ResourceUsageView(ViewBase):
@@ -30,15 +32,17 @@ class ResourceUsageView(ViewBase):
         else:
             self.__show_resource_usage()
 
-    def __show_resource_usage(self, filter=None):
+    def __show_resource_usage(self, name_to_filter=None):
         """
         Method that render the resources of the pods.
 
-        :param filter the filter to be apply to limit the resources to show.
+        :param name_to_filter the name_to_filter to be apply to limit the resources to show.
         """
         pods = self.custom_api.list_cluster_custom_object(
-            group="metrics.k8s.io", version="v1beta1", plural="pods", pretty=True
-        )
+            group="metrics.k8s.io",
+            version="v1beta1",
+            plural="pods",
+            pretty=True)
         table = Table(
             Column("Namespace", style="green"),
             Column("Pod Name", style="green"),
@@ -50,41 +54,42 @@ class ResourceUsageView(ViewBase):
         for pod in pods["items"]:
             pod_name = pod["metadata"]["name"]
 
-            if filter is not None and filter not in pod_name:
+            if name_to_filter is not None and name_to_filter not in pod_name:
                 continue
 
             containers = pod["containers"]
-            ns = pod["metadata"]["namespace"]
-            ns_obj = pods_por_namespace.get(ns)
+            namespace = pod["metadata"]["namespace"]
+            ns_obj = pods_por_namespace.get(namespace)
 
             if ns_obj is None:
                 ns_obj = {}
-            ns_obj.update(
-                {
-                    pod_name: {
-                        "containers": containers,
-                    }
-                }
-            )
-            pods_por_namespace.update({ns: ns_obj})
+            ns_obj.update({pod_name: {
+                "containers": containers,
+            }})
+            pods_por_namespace.update({namespace: ns_obj})
         usage_info_list = []
 
-        for namespace in pods_por_namespace:
+        for namespace in pods_por_namespace.items():
             pods = pods_por_namespace[namespace]
             for pod in pods:
                 containers = pods[pod]["containers"]
                 for container in containers:
-                    usage_info_list.append(
-                        {
-                            "namespace": namespace,
-                            "pod": pod,
-                            "container_name": container["name"],
-                            "cpu": convertToMilicore(container["usage"]["cpu"]),
-                            "memory": convertToMi(container["usage"]["memory"], False),
-                        }
-                    )
+                    usage_info_list.append({
+                        "namespace":
+                        namespace,
+                        "pod":
+                        pod,
+                        "container_name":
+                        container["name"],
+                        "cpu":
+                        convert_to_milicore(container["usage"]["cpu"]),
+                        "memory":
+                        convert_to_mi(container["usage"]["memory"], False),
+                    })
 
-        usage_info_list_sorted = sorted(usage_info_list, key=itemgetter("memory"), reverse=True)
+        usage_info_list_sorted = sorted(usage_info_list,
+                                        key=itemgetter("memory"),
+                                        reverse=True)
         for item in usage_info_list_sorted:
             table.add_row(
                 item.get("namespace"),

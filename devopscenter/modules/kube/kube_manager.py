@@ -1,4 +1,5 @@
-# -*- coding: utf-8 -*-
+""" Module that ask for the context to be used. """
+
 __author__ = "Mariano Jose Abdala"
 __version__ = "0.1.0"
 
@@ -12,10 +13,10 @@ from devopscenter.modules.kube.context import Context
 
 
 class KubeManager(KubeBase):
-    def __init__(self) -> None:
-        super().__init__()
+    """ Class that ask for the context to be used"""
 
     def show_help(self) -> None:
+        """ Show module help. """
         self.log("Select the context to use")
         table = Table(Column("Contexts", style="green"))
         for context_name in self.contexts:
@@ -23,6 +24,7 @@ class KubeManager(KubeBase):
         self.print(table)
 
     def start(self) -> None:
+        """ Start in the kube module. """
         kube_completer = WordCompleter(self.contexts, WORD=True)
         table = Table(Column("Contexts", style="green"))
         for context_name in self.contexts:
@@ -33,19 +35,17 @@ class KubeManager(KubeBase):
             try:
                 with patch_stdout(raw=True):
                     self.session.completer = kube_completer
-                    text = self.session.prompt(
-                        [
-                            ("fg:ansimagenta bold", "kube"),
-                            ("", ":>$"),
-                        ]
-                    )
+                    text = self.session.prompt([
+                        ("fg:ansimagenta bold", "kube"),
+                        ("", ":>$"),
+                    ])
                     command = text.strip()
                     if command == "exit":
                         break
-                    if command == "help" or command == "h":
+                    if command in ('help', 'h'):
                         self.show_help()
                     else:
-                        if command != "":
+                        if command != "" and command in self.contexts:
                             ctx = Context(command)
                             ctx.start()
 

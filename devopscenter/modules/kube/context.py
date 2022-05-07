@@ -1,44 +1,43 @@
+""" Context Module that will be used to reference the kubeconfig context
+loaded from the files """
 # -*- coding: utf-8 -*-
 __author__ = "Mariano Jose Abdala"
 __version__ = "0.1.0"
 
+import shlex
 
-import json
-
-from rich.table import Table, Column
-from prompt_toolkit.shortcuts import ProgressBar
 from prompt_toolkit.patch_stdout import patch_stdout
+from rich.table import Table, Column
 
 from devopscenter.modules.kube.kube_base import KubeBase
-from devopscenter.modules.kube.cluster_utils import get_namespace_names
-from devopscenter.modules.kube.namespaces import Namespaces
+from devopscenter.modules.kube.namespace.namespaces_manager import NamespacesManager
 from devopscenter.modules.kube.search import Search
 from devopscenter.modules.kube.views.custom_views import CustomViews
 
 
 class Context(KubeBase):
+    """
+    Class that encapsulate commands that can be used on any kubernetes context like
+    searching a microservice, get into a namespace, show custom views.
+    """
+
     def __init__(self, context_name) -> None:
+        """ Constructor. """
         super().__init__()
         self.context = context_name
-        self.setup(context_name)
+        self._register_commands()
 
-    def setup(self, context_name) -> None:
-        core_v1 = self.cores_v1.get(context_name)
-        namespaces = get_namespace_names(core_v1.list_namespace())
-        namespaces_to_save = []
-
-        try:
-            with ProgressBar("Initializing Context") as pb:
-                for namespace in pb(namespaces, label="Getting info"):
-                    namespaces_to_save.append(namespace)
-
-        except Exception:
-            self.console.print_exception()
-        with open(self.base_path_namespaces, "w", encoding="utf-8") as kube:
-            kube.write(json.dumps(namespaces_to_save, indent=2))
+    def _register_commands(self):
+        """ Add the command to be used and showed in the toolbar. """
+        self.commands = {
+            "ns": NamespacesManager(self.context),
+            "search": Search(self.context),
+            "views": CustomViews(self.context),
+        }
 
     def get_toolbar(self):
-        return "Commands: ns - search - views"
+        """ Get the labels to be used on the toolbar on the context. """
+        return f'Commands: {" ".join(list(self.commands.keys()))}'
 
     def show_help(self) -> None:
         """
@@ -54,6 +53,7 @@ class Context(KubeBase):
         self.print(table)
 
     def start(self) -> None:
+        """ Start in the selected context. """
         while True:
             try:
                 with patch_stdout(raw=True):
@@ -64,21 +64,17 @@ class Context(KubeBase):
                             ("", ":>$"),
                         ],
                         bottom_toolbar=self.get_toolbar(),
-                    )
-                    command = text.strip()
+                    ).strip()
+
+                    args = shlex.split(text)
+                    command = args[0]
+
                     if command == "exit":
                         break
-                    elif command == "help":
+                    if command in ("help", "h"):
                         self.show_help()
-                    elif command == "views":
-                        cv = CustomViews(self.context)
-                        cv.start()
-                    elif command == "ns":
-                        ns = Namespaces(self.context)
-                        ns.start()
-                    elif command == "search":
-                        search = Search(self.context)
-                        search.start()
+
+                    self.commands.get(command, KubeBase()).start()
 
             except KeyboardInterrupt:
                 continue  # Control-C pressed. Try again.

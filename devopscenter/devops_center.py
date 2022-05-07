@@ -1,3 +1,4 @@
+""" Here we will load all the modules that can be created on the modules folder."""
 from prompt_toolkit import PromptSession
 
 from rich.table import Table, Column
@@ -11,9 +12,6 @@ class Manager(Base):
     Class that is in charge of all the interacion with kubernetes.
     This will load all the modules that needs and use the accordenly
     """
-
-    def __init__(self) -> None:
-        super().__init__()
 
     def show_help(self) -> None:
         """
@@ -34,16 +32,14 @@ class Manager(Base):
         self.log("Welcome to [green]Devops Center[/green] !")
         while True:
             try:
-                text = session.prompt(
-                    [
-                        ("fg:ansimagenta bold", "devops_center"),
-                        ("", ":>$"),
-                    ]
-                )
+                text = session.prompt([
+                    ("fg:ansimagenta bold", "devops_center"),
+                    ("", ":>$"),
+                ])
                 command = text.strip()
                 if command == "exit":
                     break
-                if command == "help" or text == "h":
+                if command in ("help", "h"):
                     self.show_help()
                 elif command == "kube":
                     manager = KubeManager()

@@ -1,4 +1,5 @@
-# -*- coding: utf-8 -*-
+""" Module for the common parts of views. """
+
 __author__ = "Mariano Jose Abdala"
 __version__ = "0.1.0"
 
@@ -6,35 +7,46 @@ import shlex
 
 from prompt_toolkit.patch_stdout import patch_stdout
 from prompt_toolkit.completion import WordCompleter
+
 from devopscenter.modules.kube.kube_base import KubeBase
+from devopscenter.modules.kube.views.base_view import ViewBase
 from devopscenter.modules.kube.views.view_pvc import PvcView
 from devopscenter.modules.kube.views.view_deployment import DeployView
 from devopscenter.modules.kube.views.view_pod_resources import PodResourcesView
 from devopscenter.modules.kube.views.view_resources_usage import ResourceUsageView
 from devopscenter.modules.kube.views.view_statefulsets import StatefulsetView
-from devopscenter.modules.kube.views.view_panel import PanelView
 from devopscenter.modules.kube.views.view_hpa import HpaView
 from devopscenter.modules.kube.views.view_ingress import IngressView
 
 
 class CustomViews(KubeBase):
+    """ This class initialize all the posible views that can be used. """
+
     def __init__(self, context_name) -> None:
+        """ Constructor. """
         super().__init__()
         self.context = context_name
         self.core_v1 = self.cores_v1.get(context_name)
         self.app_v1 = self.apps_v1.get(context_name)
         self.custom_api = self.custom_apis.get(context_name)
         self.autoscaling = self.autoscalings.get(context_name)
-        self.extensionsV1Beta1api = self.extensionsV1Beta1apis.get(
-            context_name)
+        self._register_views()
 
-    def get_toolbar(self) -> str:
-        return "Commands: pvc stateful deploy resources usage hpa ingress"
+    def _register_views(self):
+        """ Add the view that can be used on a map for later execution. """
+        self.commands = {
+            "pvc": PvcView(self.core_v1, self.context),
+            "stateful": StatefulsetView(self.app_v1, self.context),
+            "deploy": DeployView(self.app_v1, self.context),
+            "hpa": HpaView(self.autoscaling, self.context),
+            "resources": PodResourcesView(self.core_v1, self.context),
+            "usage": ResourceUsageView(self.custom_api),
+            "ingress": IngressView(self.custom_api),
+        }
 
     def start(self) -> None:
-        ns_completer = WordCompleter(
-            ["pvc", "stateful", "deploy", "resources", "usage", "hpa", "ingress"], WORD=True
-        )
+        """ Start custom views command prompt. """
+        ns_completer = WordCompleter(list(self.commands.keys()), WORD=True)
         self.session.completer = ns_completer
         while True:
             try:
@@ -47,42 +59,14 @@ class CustomViews(KubeBase):
                             ("", ":>$"),
                         ],
                         bottom_toolbar=self.get_toolbar(),
-                    )
-                    command = text.strip()
+                    ).strip()
+
+                    args = shlex.split(text)
+                    command = args[0]
                     if command == "exit":
                         break
-                    elif "pvc" in command:
-                        args = shlex.split(command)
-                        pvc = PvcView(self.core_v1, self.context)
-                        pvc.execute(args)
-                    elif "stateful" in command:
-                        args = shlex.split(command)
-                        pvc = StatefulsetView(self.app_v1, self.context)
-                        pvc.execute(args)
-                    elif "deploy" in command:
-                        args = shlex.split(command)
-                        pvc = DeployView(self.app_v1, self.context)
-                        pvc.execute(args)
-                    elif "hpa" in command:
-                        args = shlex.split(command)
-                        pvc = HpaView(self.autoscaling, self.context)
-                        pvc.execute(args)
-                    elif "resources" in command:
-                        args = shlex.split(command)
-                        pvc = PodResourcesView(self.core_v1, self.context)
-                        pvc.execute(args)
-                    elif "usage" in command:
-                        args = shlex.split(command)
-                        pvc = ResourceUsageView(self.custom_api)
-                        pvc.execute(args)
-                    elif "panel" in command:
-                        args = shlex.split(command)
-                        pvc = PanelView(self.core_v1, self.context)
-                        pvc.execute(args)
-                    elif "ingress" in command:
-                        args = shlex.split(command)
-                        ingress = IngressView(self.custom_api)
-                        ingress.execute(args)
+
+                    self.commands.get(command, ViewBase()).execute(args)
 
             except KeyboardInterrupt:
                 continue  # Control-C pressed. Try again.

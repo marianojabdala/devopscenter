@@ -1,4 +1,5 @@
-# -*- coding: utf-8 -*-
+""" Module in charge of Persistent volume claims. """
+
 __author__ = "Mariano Jose Abdala"
 __version__ = "0.1.0"
 
@@ -9,6 +10,8 @@ from devopscenter.modules.kube.cluster_utils import get_pods
 
 
 class PvcView(ViewBase):
+    """ Class used to show Persistent Volume Claims """
+
     def __init__(self, core, context):
         """
         Constructor.
@@ -27,33 +30,32 @@ class PvcView(ViewBase):
         else:
             self.__show_pvc_table()
 
-    def __show_pvc_table(self, filter=None):
+    def __show_pvc_table(self, name_to_filter=None):
         """
         Shows a table for all the pvc.
-        :param filter the filter to use to get the pvc
+        :param name_to_filter the name_to_filter to use to get the pvc
         """
         with self.console.status("Working..."):
             pods = get_pods(self.core_v1)
 
-        pvcs = self.core_v1.list_persistent_volume_claim_for_all_namespaces(timeout_seconds=60)
+        pvcs = self.core_v1.list_persistent_volume_claim_for_all_namespaces(
+            timeout_seconds=60)
         pvc_obj = {}
 
         with self.console.status("Working..."):
             for pvc in pvcs.items:
                 pvc_name = pvc.metadata.name
-                if filter is not None and filter not in pvc_name:
+                if name_to_filter is not None and name_to_filter not in pvc_name:
                     continue
-                pvc_obj.update(
-                    {
-                        pvc.metadata.name: {
-                            "namespace": pvc.metadata.namespace,
-                            "volumen_name": pvc.spec.volume_name,
-                            "storage": pvc.spec.resources.requests["storage"],
-                        }
+                pvc_obj.update({
+                    pvc.metadata.name: {
+                        "namespace": pvc.metadata.namespace,
+                        "volumen_name": pvc.spec.volume_name,
+                        "storage": pvc.spec.resources.requests["storage"],
                     }
-                )
+                })
 
-            for index, pod in enumerate(pods):
+            for _, pod in enumerate(pods):
                 if filter is not None and filter not in pod.pod_name:
                     continue
 
@@ -80,7 +82,8 @@ class PvcView(ViewBase):
                 data = pvc_obj.get(pvc)
                 table.add_row(
                     self.context,
-                    data["namespace"] if "namespace" in data else "no namespace",
+                    data["namespace"]
+                    if "namespace" in data else "no namespace",
                     data["pod"] if "pod" in data else "sin pod",
                     pvc,
                     data["storage"] if "storage" in data else "no storage",

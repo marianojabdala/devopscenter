@@ -1,30 +1,18 @@
-# -*- coding: utf-8 -*-
+"""
+This class will be in charge of encapsulate the real pod and
+create useful methods that extract data from it to be use as
+we need it.
+"""
+
 __author__ = "Mariano Jose Abdala"
 __version__ = "0.1.0"
 
-
-"""
-This class will be in charge of encapsulate the real pod and 
-create useful methods that extract data from it to be use as 
-we need it.
-"""
 import json
-import tempfile
-import os
-from typing import List
-from os import environ
-from datetime import datetime
-from pathlib import Path
 
-from kubernetes.client.exceptions import ApiException
+from typing import List
 
 from devopscenter.modules.kube.constants import (  # pylint: disable=import-error
-    RUNNING,
-    WAITING,
-    TERMINATED,
-    NOT_READY,
-    FAILURE,
-    NOT_READY_MOUNT,
+    RUNNING, WAITING, TERMINATED, NOT_READY, FAILURE, NOT_READY_MOUNT,
 )
 
 
@@ -87,6 +75,7 @@ class PodInfo:  # pylint: disable=too-few-public-methods
 
     @property
     def containers(self):
+        """ Retrieves the conteiners of the pod. """
         return self.real_pod.spec.containers
 
     def get_containers_to_show(self, only_errors=False):
@@ -100,17 +89,16 @@ class PodInfo:  # pylint: disable=too-few-public-methods
         field_selector = "involvedObject.name=" + self.pod_name
 
         for container in self.containers_statuses:
-            state = (
-                (container.ready and RUNNING)
-                or (not container.ready and NOT_READY)
-                or (container.state.terminated and TERMINATED)
-                or (container.state.waiting and WAITING)
-                or (container.state.running and RUNNING)
-                or (container.state.running and FAILURE)
-            )
+            state = ((container.ready and RUNNING)
+                     or (not container.ready and NOT_READY)
+                     or (container.state.terminated and TERMINATED)
+                     or (container.state.waiting and WAITING)
+                     or (container.state.running and RUNNING)
+                     or (container.state.running and FAILURE))
             info = None
             if only_errors:
-                if state in (WAITING, TERMINATED, NOT_READY, NOT_READY_MOUNT, FAILURE):
+                if state in (WAITING, TERMINATED, NOT_READY, NOT_READY_MOUNT,
+                             FAILURE):
                     events_raw = self.kube_core.list_namespaced_event(
                         namespace=self.namespace,
                         field_selector=field_selector,
@@ -121,9 +109,17 @@ class PodInfo:  # pylint: disable=too-few-public-methods
                         if container.name in event["metadata"]["name"]:
                             info = f'{event["reason"]} - {event["message"]}'
 
-                    containers_errors.update({container.name: {"state": state, "info": info}})
+                    containers_errors.update(
+                        {container.name: {
+                            "state": state,
+                            "info": info
+                        }})
             else:
-                containers_info.update({container.name: {"state": state, "info": info}})
+                containers_info.update(
+                    {container.name: {
+                        "state": state,
+                        "info": info
+                    }})
         return containers_errors if only_errors else containers_info
 
     def __str__(self):

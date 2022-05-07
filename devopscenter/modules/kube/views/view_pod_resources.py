@@ -1,14 +1,16 @@
-# -*- coding: utf-8 -*-
+""" Module for Pod Resources(limits, requests)"""
 __author__ = "Mariano Jose Abdala"
 __version__ = "0.1.0"
+
+from rich.panel import Panel
 
 from devopscenter.modules.kube.views.base_view import ViewBase
 from devopscenter.modules.kube.cluster_utils import get_pods
 
-from rich.panel import Panel
-
 
 class PodResourcesView(ViewBase):
+    """ Class in charge of get the pods resources and show them. """
+
     def __init__(self, core, context):
         """
         Class constructor.
@@ -28,32 +30,36 @@ class PodResourcesView(ViewBase):
         else:
             self.__show_pod_resources()
 
-    def __show_pod_resources(self, filter=None):
+    def __show_pod_resources(self, name_to_filter=None):
         """
         This will get all the pods and show the resources(limits,request)
-        if filter is given just show those resources if not the entire
+        if name_to_filter is given just show those resources if not the entire
         pods on the cluster.
 
-        :param filter restrict the pods to be shown.
+        :param name_to_filter restrict the pods to be shown.
         """
         with self.console.status("Getting resouces"):
             pods = get_pods(self.core_v1)
         panels = []
         for pod in pods:
             pod_name = pod.pod_name
-            if filter is not None and filter not in pod_name:
+            if name_to_filter is not None and name_to_filter not in pod_name:
                 continue
 
             containers = pod.containers
 
             for container in containers:
                 resources = container.resources
-                panels.append(
-                    Panel(
-                        f"[white]Requests: {str(resources.requests)} \nLimits: {str(resources.limits)}[/white]",
-                        title=f"[blue]Namespace: {pod.namespace} [/blue]- [green]Container: {container.name}[/green][reset]",
-                        expand=False,
-                    )
-                )
+                panels.append(self.create_panel(str(resources.requests), str(
+                    resources.limits), pod.namespace, container.name))
+
         for panel in panels:
             self.print(panel)
+
+    def create_panel(self, requests, limits, namespace, container_name) -> Panel:  # pylint: disable=no-self-use
+        """ Creates the panel to be shown. """
+        namespace_title = f"[blue]Namespace: {namespace} [/blue]"
+        container_title = f"[green]Container: {container_name}[/green][reset]"
+        title = namespace_title + "-" + container_title
+        body = f"[white]Requests: {requests} \nLimits: {limits}[/white]"
+        return Panel(body, title=title, expand=False)
