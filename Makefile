@@ -6,7 +6,8 @@ deps:
 	poetry install
 
 lint:
-	pylint -v --recursive y -j 4 devopscenter/ | pylint-json2html -f jsonextended -o pylint.html 
+	pylint -v --recursive y -j 4 devopscenter/ | pylint-json2html -f jsonextended -o pylint.html
+
 format:
 	yapf -i --recursive $(SOURCE_CODE)
 
