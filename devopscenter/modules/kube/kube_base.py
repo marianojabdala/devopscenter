@@ -39,7 +39,7 @@ class KubeBase(Base):  # pylint: disable=too-many-instance-attributes
             and creates a map with the possible funcionalities that can be used
             on the system.
         """
-        if not hasattr(self, "contexts"):
+        if hasattr(self, "contexts") and len(self.contexts) == 0:
             self.base_path_namespaces = os.path.join(self.base_path,
                                                      "namespaces.json")
             kubefiles = []
