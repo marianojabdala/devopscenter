@@ -27,7 +27,7 @@ class NamespacesManager(KubeBase):
         Constructor
         """
         super().__init__()
-        self.core_v1 = self.cores_v1.get(context)
+        self.api = self.cores_v1.get(context)
         self.context = context
         self.pods = []
         self.namespace = None
@@ -39,11 +39,8 @@ class NamespacesManager(KubeBase):
 
     def show_help(self) -> None:
         """ Show the commands that are allowed. """
-        table = Table(
-            Column("Commands", style="green"),
-            Column("Description", style=""),
-            Column("Info", style=""),
-        )
+        table = Table(Column("Commands", style="green"),
+                      Column("Description", style=""))
         table.add_row("list", "Shows all the namespaces")
         table.add_row("create", "Creates the given namespace")
         table.add_row("delete", "Delete the given namespace")
@@ -57,13 +54,13 @@ class NamespacesManager(KubeBase):
                 delete_options = self.k8s_client.V1DeleteOptions(
                     grace_period_seconds=0)
 
-                self.core_v1.delete_namespace(namespace_to_delete,
-                                              body=delete_options)
+                self.api.delete_namespace(namespace_to_delete,
+                                          body=delete_options)
 
                 with self.console.status("Terminating namespace"):
                     while True:
                         current_namespaces = get_namespace_names(
-                            self.core_v1.list_namespace())
+                            self.api.list_namespace())
                         if namespace_to_delete in current_namespaces:
                             time.sleep(45)
                         else:
@@ -82,7 +79,7 @@ class NamespacesManager(KubeBase):
                 metadata=self.k8s_client.V1ObjectMeta(
                     name=namespace_to_create))
             try:
-                self.core_v1.create_namespace(namespace)
+                self.api.create_namespace(namespace)
             except ApiException as api_ex:
                 self.log("Somethig went wrong creating namespace", api_ex)
 
@@ -101,7 +98,7 @@ class NamespacesManager(KubeBase):
         while True:
             try:
                 self.current_namespaces = get_namespace_names(
-                    self.core_v1.list_namespace())
+                    self.api.list_namespace())
                 self.session.completer = WordCompleter(self.current_namespaces,
                                                        WORD=True)
                 with patch_stdout(raw=True):
@@ -115,23 +112,23 @@ class NamespacesManager(KubeBase):
                     ).strip()
 
                 args = shlex.split(text)
-                text = args[0]
-                if text == "exit":
-                    break
+                if len(args) > 0:
+                    text = args[0]
+                    if text == "exit":
+                        break
 
-                if text == "create":
-                    self._create_ns(args)
+                    if text == "create":
+                        self._create_ns(args)
 
-                if text == "delete":
-                    args = shlex.split(text)
-                    self._delete_ns(args)
+                    if text == "delete":
+                        self._delete_ns(args)
 
-                if text == "list":
-                    self._show_list()
+                    if text == "list":
+                        self._show_list()
 
-                if text in self.current_namespaces:
-                    namespaces = Namespaces(self.context, text)
-                    namespaces.start()
+                    if text in self.current_namespaces:
+                        namespaces = Namespaces(self.context, text)
+                        namespaces.start()
 
             except KeyboardInterrupt:
                 continue  # Control-C pressed. Try again.

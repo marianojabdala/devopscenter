@@ -11,11 +11,11 @@ from devopscenter.modules.kube.views.base_view import ViewBase
 class StatefulsetView(ViewBase):
     """ Main class that shows the statfulsets. """
 
-    def __init__(self, app, context):
-        """ Constructor. """
-        super().__init__()
-        self.app_v1 = app
-        self.context = context
+    # def __init__(self, app, context):
+    #     """ Constructor. """
+    #     super().__init__()
+    #     self.api = app
+    #     self.context = context
 
     def execute(self, args):
         """
@@ -31,7 +31,7 @@ class StatefulsetView(ViewBase):
         """ Get the statefulsets and print them in a table.
             If the name_to_filter param is given just show that one
         """
-        statfulsets = self.app_v1.list_stateful_set_for_all_namespaces(
+        statfulsets = self.api.list_stateful_set_for_all_namespaces(
             timeout_seconds=60)
         stateful_set_obj = {}
         for stateful_set in statfulsets.items:

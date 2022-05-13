@@ -11,11 +11,11 @@ from devopscenter.modules.kube.views.base_view import ViewBase
 class DeployView(ViewBase):
     """ Main class. """
 
-    def __init__(self, app, context):
-        """ Constructor. """
-        super().__init__()
-        self.app_v1 = app
-        self.context = context
+    # def __init__(self, app, context):
+    #     """ Constructor. """
+    #     super().__init__()
+    #     self.api = app
+    #     self.context = context
 
     def execute(self, args):
         """ Retrieve the deploy using the args"""
@@ -29,7 +29,7 @@ class DeployView(ViewBase):
         param is given, just
         show only the ones that belogns to the filter. """
 
-        deploys = self.app_v1.list_deployment_for_all_namespaces(
+        deploys = self.api.list_deployment_for_all_namespaces(
             timeout_seconds=60)
         deploy_obj = {}
 

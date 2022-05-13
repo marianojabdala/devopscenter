@@ -11,14 +11,6 @@ from devopscenter.modules.kube.cluster_utils import get_pods
 class PodResourcesView(ViewBase):
     """ Class in charge of get the pods resources and show them. """
 
-    def __init__(self, core, context):
-        """
-        Class constructor.
-        """
-        super().__init__()
-        self.core_v1 = core
-        self.context = context
-
     def execute(self, args):
         """
         Entrypint of the class that will be used to show the resources.
@@ -39,7 +31,7 @@ class PodResourcesView(ViewBase):
         :param name_to_filter restrict the pods to be shown.
         """
         with self.console.status("Getting resouces"):
-            pods = get_pods(self.core_v1)
+            pods = get_pods(self.api)
         panels = []
         for pod in pods:
             pod_name = pod.pod_name
@@ -50,13 +42,16 @@ class PodResourcesView(ViewBase):
 
             for container in containers:
                 resources = container.resources
-                panels.append(self.create_panel(str(resources.requests), str(
-                    resources.limits), pod.namespace, container.name))
+                panels.append(
+                    self.create_panel(str(resources.requests),
+                                      str(resources.limits), pod.namespace,
+                                      container.name))
 
         for panel in panels:
             self.print(panel)
 
-    def create_panel(self, requests, limits, namespace, container_name) -> Panel:  # pylint: disable=no-self-use
+    def create_panel(  # pylint: disable=no-self-use
+            self, requests, limits, namespace, container_name) -> Panel:
         """ Creates the panel to be shown. """
         namespace_title = f"[blue]Namespace: {namespace} [/blue]"
         container_title = f"[green]Container: {container_name}[/green][reset]"

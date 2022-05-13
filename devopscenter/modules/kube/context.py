@@ -4,12 +4,10 @@ loaded from the files """
 __author__ = "Mariano Jose Abdala"
 __version__ = "0.1.0"
 
-import shlex
-
-from prompt_toolkit.patch_stdout import patch_stdout
 from rich.table import Table, Column
 
 from devopscenter.modules.kube.kube_base import KubeBase
+from devopscenter.modules.kube.not_found import NotFound
 from devopscenter.modules.kube.namespace.namespaces_manager import NamespacesManager
 from devopscenter.modules.kube.search import Search
 from devopscenter.modules.kube.views.custom_views import CustomViews
@@ -52,31 +50,11 @@ class Context(KubeBase):
         table.add_row("views", "Shows distinct views")
         self.print(table)
 
-    def start(self) -> None:
-        """ Start in the selected context. """
-        while True:
-            try:
-                with patch_stdout(raw=True):
-                    text = self.session.prompt(
-                        [
-                            ("fg:green bold", "(" + self.context + "):"),
-                            ("fg:ansimagenta bold", "context"),
-                            ("", ":>$"),
-                        ],
-                        bottom_toolbar=self.get_toolbar(),
-                    ).strip()
+    def _do_work(self, command=None, args=None) -> None:
+        self.commands.get(command, NotFound()).start()
 
-                    args = shlex.split(text)
-                    command = args[0]
+    def _get_label(self):
+        return self.context
 
-                    if command == "exit":
-                        break
-                    if command in ("help", "h"):
-                        self.show_help()
-
-                    self.commands.get(command, KubeBase()).start()
-
-            except KeyboardInterrupt:
-                continue  # Control-C pressed. Try again.
-            except EOFError:
-                break  # Control-D pressed.
+    def _get_cmd_label(self):  # pylint: disable=no-self-use
+        return "context"

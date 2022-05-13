@@ -12,14 +12,6 @@ from devopscenter.modules.kube.cluster_utils import get_pods
 class PvcView(ViewBase):
     """ Class used to show Persistent Volume Claims """
 
-    def __init__(self, core, context):
-        """
-        Constructor.
-        """
-        super().__init__()
-        self.core_v1 = core
-        self.context = context
-
     def execute(self, args):
         """
         Entrypoint for the view
@@ -36,9 +28,9 @@ class PvcView(ViewBase):
         :param name_to_filter the name_to_filter to use to get the pvc
         """
         with self.console.status("Working..."):
-            pods = get_pods(self.core_v1)
+            pods = get_pods(self.api)
 
-        pvcs = self.core_v1.list_persistent_volume_claim_for_all_namespaces(
+        pvcs = self.api.list_persistent_volume_claim_for_all_namespaces(
             timeout_seconds=60)
         pvc_obj = {}
 
@@ -56,7 +48,7 @@ class PvcView(ViewBase):
                 })
 
             for _, pod in enumerate(pods):
-                if filter is not None and filter not in pod.pod_name:
+                if name_to_filter is not None and name_to_filter not in pod.pod_name:
                     continue
 
                 volumenes = pod.volumes

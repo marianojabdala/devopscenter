@@ -15,13 +15,6 @@ class IngressView(ViewBase):
     Class used to render the ResourceUsage of the pods.
     """
 
-    def __init__(self, custom_api):
-        """
-        Class Constructor.
-        """
-        super().__init__()
-        self.custom_api = custom_api
-
     def execute(self, args):
         """
         Entrypoint of the class where gets the arguments and use them.
@@ -40,11 +33,10 @@ class IngressView(ViewBase):
         ingresses = []
 
         try:
-            ingresses = self.custom_api.list_cluster_custom_object(
-                group="extensions",
-                version="v1",
-                plural="ingresses",
-                pretty=True)
+            ingresses = self.api.list_cluster_custom_object(group="extensions",
+                                                            version="v1",
+                                                            plural="ingresses",
+                                                            pretty=True)
         except ApiException:
             self.print("No Resources found")
             return
@@ -74,8 +66,7 @@ class IngressView(ViewBase):
                     ingresses_por_namespace.update({
                         f"{namespace}:{ingress_name}": {
                             "ingress_name": ingress_name,
-                            "annotations":
-                            pretty_annotations(annotations),
+                            "annotations": pretty_annotations(annotations),
                             "namespace": namespace,
                         }
                     })

@@ -22,7 +22,7 @@ class Search(KubeBase):
     def __init__(self, context) -> None:
         """Constructor."""
         super().__init__()
-        self.core_v1 = self.cores_v1.get(context)
+        self.api = self.cores_v1.get(context)
         self.context = context
 
     def search_microservice(self, microservice_name) -> Set[str]:
@@ -32,12 +32,12 @@ class Search(KubeBase):
         :param microservice_name
         :return namespace name
         """
-        namespaces = get_namespace_names(self.core_v1.list_namespace())
+        namespaces = get_namespace_names(self.api.list_namespace())
         in_namespace = set()
         with Progress(transient=True) as progress:
             for namespace in progress.track(namespaces,
                                             description="Searching..."):
-                pods = get_pods(self.core_v1, namespace)
+                pods = get_pods(self.api, namespace)
                 for pod in pods:
                     if microservice_name in pod.pod_name:
                         in_namespace.add(namespace)

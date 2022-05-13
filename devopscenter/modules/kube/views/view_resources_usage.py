@@ -68,9 +68,7 @@ class ResourceUsageView(ViewBase):
             }})
             pods_por_namespace.update({namespace: ns_obj})
         usage_info_list = []
-
-        for namespace in pods_por_namespace.items():
-            pods = pods_por_namespace[namespace]
+        for namespace, pods in pods_por_namespace.items():
             for pod in pods:
                 containers = pods[pod]["containers"]
                 for container in containers:

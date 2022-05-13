@@ -68,19 +68,33 @@ def get_namespace_names(namespaces_list) -> List:
     return namespaces
 
 
-def get_pods(core_v1, namespace=None) -> List[PodInfo]:
+def get_pods(api, namespace=None) -> List[PodInfo]:
     """
     Get the list of pod from the entire cluster or a namespace.
     """
     if namespace is not None:
-        pods = core_v1.list_namespaced_pod(namespace=namespace,
-                                           timeout_seconds=5,
-                                           _request_timeout=5)
+        pods = api.list_namespaced_pod(namespace=namespace,
+                                       timeout_seconds=5,
+                                       _request_timeout=5)
     else:
-        pods = core_v1.list_pod_for_all_namespaces()
+        pods = api.list_pod_for_all_namespaces()
 
     pod_names = []
     for pod in pods.items:
-        pod_names.append(PodInfo(pod, core_v1))
+        pod_names.append(PodInfo(pod, api))
 
     return pod_names
+
+
+def get_container_name(pod, container_index) -> str:  # pylint: disable=no-self-use
+    """ Retrieves the name of the selected pod. """
+
+    container_name = None
+    if pod is not None:
+        containers = pod.get_containers_to_show()
+        if len(containers) > 0:
+            for index, item in enumerate(containers.items()):
+                if int(index) == container_index:
+                    container_name, _ = item
+                    break
+    return container_name

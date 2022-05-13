@@ -10,12 +10,6 @@ from devopscenter.modules.kube.namespace.commands.base_cmd import BaseCmd
 class PodCmd(BaseCmd):
     """Manage the pods."""
 
-    def __init__(self, core, namespace):
-        """Initialize a new pod command."""
-        super().__init__()
-        self.core = core
-        self.namespace = namespace
-
     def execute(self, args: None) -> None:
         pods = get_pods(self.core, self.namespace)
         table = Table(

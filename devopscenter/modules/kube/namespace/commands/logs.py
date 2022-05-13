@@ -4,19 +4,12 @@ __author__ = "Mariano Jose Abdala"
 __version__ = "0.1.0"
 
 from kubernetes.client.exceptions import ApiException
-
 from devopscenter.modules.kube.namespace.commands.base_cmd import BaseCmd
-from devopscenter.modules.kube.cluster_utils import get_pods
+from devopscenter.modules.kube.cluster_utils import get_container_name
 
 
 class LogsCmd(BaseCmd):
     """Manage how the logs are printed."""
-
-    def __init__(self, core, namespace):
-        """Initialize a new log command."""
-        super().__init__()
-        self.core = core
-        self.namespace = namespace
 
     def __exec_and_show_logs(self, pod_name, container_name):
         """ Exectute the command and print the logs."""
@@ -58,13 +51,7 @@ class LogsCmd(BaseCmd):
                 "[red]Error you should select the number of the pod to show the log. Eg logs 0.0[/red]"
             )
             return
-        pods = get_pods(self.core, self.namespace)
+        pods = self._get_pods(self.core, self.namespace)
         pod = self.get_pod(int(pod_index), pods)
-
-        if pod is not None:
-            containers = pod.get_containers_to_show()
-            if len(containers) > 0:
-                for index, item in enumerate(containers.items()):
-                    if int(index) == int(container_index):
-                        container_name, _ = item
-                        self.__exec_and_show_logs(pod.pod_name, container_name)
+        container_name = get_container_name(pod, int(container_index))
+        self.__exec_and_show_logs(pod.pod_name, container_name)
