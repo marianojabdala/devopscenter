@@ -5,7 +5,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.8", "3.9"]
+        python-version: ["3.6","3.7", "3.8", "3.9"]
 
     steps:
       - run: echo "🎉 The job was automatically triggered by a ${{ github.event_name }} event."
@@ -36,11 +36,13 @@ jobs:
           make analyze
       - name: Lint and upload
         run: |
+          mkdir -p lint-${{ matrix.python-version }}
           make lint
+          mv .pylint.html lint-${{ matrix.python-version }}
       - uses: actions/upload-artifact@v3.0.0
         with:
-          name: pylint.html
-          path: ./pylint.html
+          name: lint-${{ matrix.python-version }}
+          path: lint-${{ matrix.python-version }}
 
       - name: Lint and display
         run: |
