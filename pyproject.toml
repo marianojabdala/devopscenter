@@ -15,7 +15,7 @@ devopscenter = "devopscenter.__main__:main"
 line-length = 100
 
 [tool.poetry.dependencies]
-python = "^3.8"
+python = "^3.7"
 kubernetes = "^23.3.0"
 prompt-toolkit = "^3.0.29"
 rich = "^12.3.0"
