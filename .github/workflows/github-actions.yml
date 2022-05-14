@@ -31,7 +31,17 @@ jobs:
           pip install poetry
           poetry install
           pip install pylint-json2html
-      - name: Lint using Makefile
+
+      - name: Lint and upload
         run: |
           make lint
+
+      - name: Lint and display
+        run: |
+          make lint_with_text
+
+      - uses: actions/upload-artifact@v3.0.0
+        with:
+          name: pylint.html
+          path: ./pylint.html
       - run: echo "🍏 This job's status is ${{ job.status }}."
