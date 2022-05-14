@@ -27,6 +27,8 @@ jobs:
 
       - name: Install dependencies
         run: |
+          pwd
+          ls
           python -m pip install --upgrade pip
           pip install poetry
           poetry install
@@ -35,13 +37,13 @@ jobs:
       - name: Lint and upload
         run: |
           make lint
+      - uses: actions/upload-artifact@v3.0.0
+        with:
+          name: pylint.html
+          path: ./pylint.html
 
       - name: Lint and display
         run: |
           make lint_with_text
 
-      - uses: actions/upload-artifact@v3.0.0
-        with:
-          name: pylint.html
-          path: ./pylint.html
       - run: echo "🍏 This job's status is ${{ job.status }}."
