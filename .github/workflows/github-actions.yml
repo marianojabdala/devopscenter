@@ -27,13 +27,14 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pwd
-          ls
           python -m pip install --upgrade pip
           pip install poetry
           poetry install
           pip install pylint-json2html
 
+      - name: Analyze with bandit
+        run: |
+          make analyze
       - name: Lint and upload
         run: |
           make lint

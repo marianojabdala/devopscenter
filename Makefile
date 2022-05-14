@@ -6,11 +6,13 @@ deps:
 	poetry install
 
 lint:
-	pylint -v devopscenter/ | pylint-json2html -f jsonextended -o pylint.html
+	PYTHONPATH=. pylint -v devopscenter/ | pylint-json2html -f jsonextended -o pylint.html
 
 lint_with_text:
-	pylint -v -f text devopscenter/
+	PYTHONPATH=. pylint -v -f text devopscenter/
 
+analyze:
+	bandit -r -v devopscenter
 format:
 	yapf -i --recursive $(SOURCE_CODE)
 
