@@ -12,7 +12,8 @@ lint_with_text:
 	PYTHONPATH=. pylint -v -f text devopscenter/
 
 analyze:
-	bandit -r -v devopscenter
+	# Ignore for now this vulnerability CVE-2021-29923q
+	safety check --full-report -i 45114
 format:
 	yapf -i --recursive $(SOURCE_CODE)
 
