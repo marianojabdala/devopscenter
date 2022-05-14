@@ -27,6 +27,7 @@ jobs:
 
       - name: Install dependencies
         run: |
+          pip install --upgrade pip
           pip install poetry
           poetry export -o requirements-dev.txt --dev --without-hashes
           pip install -r requirements.txt
