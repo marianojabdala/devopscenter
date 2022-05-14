@@ -14,6 +14,7 @@ lint_with_text:
 analyze:
 	# Ignore for now this vulnerability CVE-2021-29923q
 	safety check --full-report -i 45114
+	bandit -r -v devopscenter
 format:
 	yapf -i --recursive $(SOURCE_CODE)
 
