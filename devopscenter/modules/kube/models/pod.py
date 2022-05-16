@@ -12,7 +12,7 @@ import json
 from typing import List
 
 from devopscenter.modules.kube.constants import (  # pylint: disable=import-error
-    RUNNING, WAITING, TERMINATED, NOT_READY, FAILURE, NOT_READY_MOUNT,
+    RUNNING, WAITING, TERMINATED, NOT_READY, FAILURE, NOT_READY_MOUNT, COMPLETED,
 )
 
 
@@ -90,11 +90,12 @@ class PodInfo:  # pylint: disable=too-few-public-methods
 
         for container in self.containers_statuses:
             state = ((container.ready and RUNNING)
-                     or (not container.ready and NOT_READY)
-                     or (container.state.terminated and TERMINATED)
+                     or ((container.state.terminated and
+                     (container.state.terminated.reason=="Completed"
+                     and COMPLETED)) or TERMINATED)
                      or (container.state.waiting and WAITING)
                      or (container.state.running and RUNNING)
-                     or (container.state.running and FAILURE))
+                     or (container.state.failure and FAILURE) or NOT_READY)
             info = None
             if only_errors:
                 if state in (WAITING, TERMINATED, NOT_READY, NOT_READY_MOUNT,

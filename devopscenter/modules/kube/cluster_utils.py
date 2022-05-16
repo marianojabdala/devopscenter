@@ -13,7 +13,7 @@ from devopscenter.modules.kube.models.pod import PodInfo
 def pretty_annotations(annotations):
     """ Prettify the annotations that will be show from the ingress."""
     new_annotations = []
-    for annotation in annotations.items():
+    for annotation in annotations:
         key, value = annotation
         formated = f"{key}:{value}"
         new_annotations.append(formated)

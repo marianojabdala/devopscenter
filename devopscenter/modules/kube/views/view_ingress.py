@@ -71,8 +71,7 @@ class IngressView(ViewBase):
                         }
                     })
 
-        for ingress_name in ingresses_por_namespace.items():
-            ingress = ingresses_por_namespace[ingress_name]
+        for _, ingress in ingresses_por_namespace.items():
 
             table.add_row(
                 ingress.get("namespace"),
