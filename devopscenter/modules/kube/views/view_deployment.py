@@ -11,12 +11,6 @@ from devopscenter.modules.kube.views.base_view import ViewBase
 class DeployView(ViewBase):
     """ Main class. """
 
-    # def __init__(self, app, context):
-    #     """ Constructor. """
-    #     super().__init__()
-    #     self.api = app
-    #     self.context = context
-
     def execute(self, args):
         """ Retrieve the deploy using the args"""
         if len(args) == 2:

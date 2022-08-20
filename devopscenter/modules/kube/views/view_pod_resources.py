@@ -43,14 +43,14 @@ class PodResourcesView(ViewBase):
             for container in containers:
                 resources = container.resources
                 panels.append(
-                    self.create_panel(str(resources.requests),
-                                      str(resources.limits), pod.namespace,
-                                      container.name))
+                    self.__create_panel(str(resources.requests),
+                                        str(resources.limits), pod.namespace,
+                                        container.name))
 
         for panel in panels:
             self.print(panel)
 
-    def create_panel(  # pylint: disable=no-self-use
+    def __create_panel(  # pylint: disable=no-self-use
             self, requests, limits, namespace, container_name) -> Panel:
         """ Creates the panel to be shown. """
         namespace_title = f"[blue]Namespace: {namespace} [/blue]"

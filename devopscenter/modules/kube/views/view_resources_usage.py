@@ -16,13 +16,6 @@ class ResourceUsageView(ViewBase):
     Class used to render the ResourceUsage of the pods.
     """
 
-    def __init__(self, custom_api):
-        """
-        Class Constructor.
-        """
-        super().__init__()
-        self.custom_api = custom_api
-
     def execute(self, args):
         """
         Entrypoint of the class where gets the arguments and use them.
@@ -38,11 +31,9 @@ class ResourceUsageView(ViewBase):
 
         :param name_to_filter the name_to_filter to be apply to limit the resources to show.
         """
-        pods = self.custom_api.list_cluster_custom_object(
-            group="metrics.k8s.io",
-            version="v1beta1",
-            plural="pods",
-            pretty=True)
+
+        usage_info_list_sorted = self.__generate_sorted_list_of_pods(name_to_filter)
+
         table = Table(
             Column("Namespace", style="green"),
             Column("Pod Name", style="green"),
@@ -50,6 +41,49 @@ class ResourceUsageView(ViewBase):
             Column("Cpu", style="", justify="right", no_wrap=True),
             Column("Memory", style="", justify="right", no_wrap=True),
         )
+
+        for item in usage_info_list_sorted:
+            table.add_row(
+                item.get("namespace"),
+                item.get("pod"),
+                item.get("container_name"),
+                item.get("cpu"),
+                f'{str(item.get("memory"))}Mi',
+            )
+        self.print(table)
+
+    def __generate_sorted_list_of_pods(self, name_to_filter):
+
+        pods_for_namespace = self.__get_pods_for_namespace(name_to_filter)
+
+        usage_info_list = []
+        for namespace, pods in pods_for_namespace.items():
+            for pod in pods:
+                containers = pods[pod]["containers"]
+                for container in containers:
+                    usage_info_list.append({
+                        "namespace":
+                            namespace,
+                        "pod":
+                            pod,
+                        "container_name":
+                            container["name"],
+                        "cpu":
+                            convert_to_milicore(container["usage"]["cpu"]),
+                        "memory":
+                            convert_to_mi(container["usage"]["memory"], False),
+                    })
+        usage_info_list_sorted = sorted(usage_info_list,
+                                        key=itemgetter("memory"),
+                                        reverse=True)
+        return usage_info_list_sorted
+
+    def __get_pods_for_namespace(self, name_to_filter):
+        pods = self.api.list_cluster_custom_object(
+            group="metrics.k8s.io",
+            version="v1beta1",
+            plural="pods",
+            pretty=True)
         pods_por_namespace = {}
         for pod in pods["items"]:
             pod_name = pod["metadata"]["name"]
@@ -67,33 +101,4 @@ class ResourceUsageView(ViewBase):
                 "containers": containers,
             }})
             pods_por_namespace.update({namespace: ns_obj})
-        usage_info_list = []
-        for namespace, pods in pods_por_namespace.items():
-            for pod in pods:
-                containers = pods[pod]["containers"]
-                for container in containers:
-                    usage_info_list.append({
-                        "namespace":
-                        namespace,
-                        "pod":
-                        pod,
-                        "container_name":
-                        container["name"],
-                        "cpu":
-                        convert_to_milicore(container["usage"]["cpu"]),
-                        "memory":
-                        convert_to_mi(container["usage"]["memory"], False),
-                    })
-
-        usage_info_list_sorted = sorted(usage_info_list,
-                                        key=itemgetter("memory"),
-                                        reverse=True)
-        for item in usage_info_list_sorted:
-            table.add_row(
-                item.get("namespace"),
-                item.get("pod"),
-                item.get("container_name"),
-                item.get("cpu"),
-                f'{str(item.get("memory"))}Mi',
-            )
-        self.print(table)
+        return pods_por_namespace

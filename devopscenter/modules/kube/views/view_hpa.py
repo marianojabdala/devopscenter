@@ -10,12 +10,6 @@ from devopscenter.modules.kube.views.base_view import ViewBase
 class HpaView(ViewBase):
     """ Class that will visualize the hpa. """
 
-    def __init__(self, autoscaling, context):
-        """ Constructor. """
-        super().__init__()
-        self.autoscaling = autoscaling
-        self.context = context
-
     def execute(self, args):
         """ Retrieve the hpa using the args"""
         if len(args) == 2:
@@ -27,7 +21,7 @@ class HpaView(ViewBase):
         """ Get the deployment and also print them, if the name_to_filter param is given, just
         show only the ones that belogns to the name_to_filter. """
 
-        hpa_list = self.autoscaling.list_horizontal_pod_autoscaler_for_all_namespaces(
+        hpa_list = self.api.list_horizontal_pod_autoscaler_for_all_namespaces(
             timeout_seconds=60)
         hpa_list_obj = {}
         for hpa in hpa_list.items:

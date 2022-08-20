@@ -11,12 +11,6 @@ from devopscenter.modules.kube.views.base_view import ViewBase
 class StatefulsetView(ViewBase):
     """ Main class that shows the statfulsets. """
 
-    # def __init__(self, app, context):
-    #     """ Constructor. """
-    #     super().__init__()
-    #     self.api = app
-    #     self.context = context
-
     def execute(self, args):
         """
         Entrypoint for the view

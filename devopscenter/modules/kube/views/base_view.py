@@ -10,10 +10,10 @@ class ViewBase(KubeBase):
     Base class that is used as base for the views.
     """
 
-    def __init__(self, app=None, context=None):
+    def __init__(self, api=None, context=None):
         """ Constructor. """
         super().__init__()
-        self.api = app
+        self.api = api
         self.context = context
 
     def execute(self, args: None):  # pylint: disable=unused-argument

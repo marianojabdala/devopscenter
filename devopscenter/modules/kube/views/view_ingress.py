@@ -30,7 +30,7 @@ class IngressView(ViewBase):
 
         :param filter_value the filter_value to be apply to limit the resources to show.
         """
-        ingresses = []
+        ingresses = {}
 
         try:
             ingresses = self.api.list_cluster_custom_object(group="extensions",
