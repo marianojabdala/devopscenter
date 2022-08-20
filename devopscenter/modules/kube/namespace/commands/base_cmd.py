@@ -20,7 +20,7 @@ class BaseCmd(Base):
         self.core = core
         self.namespace = namespace
 
-    def _get_pods(self, api, namespace=None) -> List[PodInfo]:  # pylint: disable=no-self-use
+    def get_pods(self, api, namespace=None) -> List[PodInfo]:  # pylint: disable=no-self-use
         """
         Get the list of pod from the entire cluster or a namespace.
         """

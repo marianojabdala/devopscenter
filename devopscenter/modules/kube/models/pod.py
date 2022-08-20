@@ -8,12 +8,19 @@ __author__ = "Mariano Jose Abdala"
 __version__ = "0.1.0"
 
 import json
-
 from typing import List
+from enum import Enum
 
-from devopscenter.modules.kube.constants import (  # pylint: disable=import-error
-    RUNNING, WAITING, TERMINATED, NOT_READY, FAILURE, NOT_READY_MOUNT, COMPLETED,
-)
+
+class PodState(Enum):
+    """ Class that holds the state of the pods to be shown. """
+    TERMINATED = "Terminated"
+    FAILURE = "Failure"
+    RUNNING = "Running"
+    WAITING = "Waiting"
+    NOT_READY = "Not Ready"
+    COMPLETED = "Completed"
+    NOT_READY_MOUNT = "Not Ready-FailedMount"
 
 
 class PodInfo:  # pylint: disable=too-few-public-methods
@@ -89,17 +96,17 @@ class PodInfo:  # pylint: disable=too-few-public-methods
         field_selector = "involvedObject.name=" + self.pod_name
 
         for container in self.containers_statuses:
-            state = ((container.ready and RUNNING)
+            state = ((container.ready and PodState.RUNNING.value)
                      or ((container.state.terminated and
-                     (container.state.terminated.reason=="Completed"
-                     and COMPLETED)) or TERMINATED)
-                     or (container.state.waiting and WAITING)
-                     or (container.state.running and RUNNING)
-                     or (container.state.failure and FAILURE) or NOT_READY)
+                          (container.state.terminated.reason == "Completed"
+                           and PodState.COMPLETED.value)) or PodState.TERMINATED.value)
+                     or (container.state.waiting and PodState.WAITING.value)
+                     or (container.state.running and PodState.RUNNING.value)
+                     or (container.state.failure and PodState.FAILURE.value) or PodState.NOT_READY.value)
             info = None
             if only_errors:
-                if state in (WAITING, TERMINATED, NOT_READY, NOT_READY_MOUNT,
-                             FAILURE):
+                if state in (PodState.WAITING, PodState.TERMINATED, PodState.NOT_READY, PodState.NOT_READY_MOUNT,
+                             PodState.FAILURE):
                     events_raw = self.kube_core.list_namespaced_event(
                         namespace=self.namespace,
                         field_selector=field_selector,

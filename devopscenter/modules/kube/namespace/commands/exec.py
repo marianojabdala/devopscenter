@@ -40,9 +40,9 @@ class ExecCmd(BaseCmd):
         """ Execute a command into the pod using the args and print the response.
         :param args arguments to be used,
         :param index, the index to used of the selected pod.
-        :param commands command to execute in the pod. Eg. ls
+        :param commands to execute in the pod. Eg. ls
         """
-        pods = self._get_pods(self.core, self.namespace)
+        pods = self.get_pods(self.core, self.namespace)
         if args is not None:
             response = self.exec_command(pods, args[1], args[2:])
         else:

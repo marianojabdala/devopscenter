@@ -1,11 +1,11 @@
 """ Entrypint used when the package is installed"""
 
-from devopscenter.devops_center import Manager
+from devopscenter.devops_center import DevopsCenter
 
 
 def main():
     """Entrypoint of the system."""
-    manager = Manager()
+    manager = DevopsCenter()
     manager.start()
 
 

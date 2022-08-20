@@ -16,7 +16,7 @@ class DeleteCmd(BaseCmd):
         if len(args) == 0:
             self.log("[red]Error please select the number to delete[/red]")
             return
-        pods = self._get_pods(self.core, self.namespace)
+        pods = self.get_pods(self.core, self.namespace)
         pod_index, _ = args[1].split(".")
         pod = self.get_pod(int(pod_index), pods)
         if pod is not None:

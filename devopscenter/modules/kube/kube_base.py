@@ -20,6 +20,7 @@ class KubeBase(Base):  # pylint: disable=too-many-instance-attributes
 
     def __init__(self) -> None:
         super().__init__()
+        self.base_path_namespaces = None
         self.commands = {}
         self.k8s_client = client
         self.contexts = []

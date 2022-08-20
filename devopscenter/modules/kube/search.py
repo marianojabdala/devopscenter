@@ -6,7 +6,6 @@ __version__ = "0.1.0"
 
 from typing import Set
 
-from prompt_toolkit.patch_stdout import patch_stdout
 from rich.progress import Progress
 
 from devopscenter.modules.kube.kube_base import KubeBase
@@ -24,6 +23,16 @@ class Search(KubeBase):
         super().__init__()
         self.api = self.cores_v1.get(context)
         self.context = context
+
+    def get_toolbar(self):
+        """ Get the labels to be used on the toolbar on the context. """
+        return None
+
+    def _get_label(self):
+        return "search"
+
+    def _get_cmd_label(self):  # pylint: disable=no-self-use
+        return "search"
 
     def search_microservice(self, microservice_name) -> Set[str]:
         """
@@ -43,35 +52,11 @@ class Search(KubeBase):
                         in_namespace.add(namespace)
         return in_namespace
 
-    def start(self) -> None:
-        """
-        Entry point for the search command.
-        This is a forever loop that will ask for the command to use.
-        """
-        while True:
-            try:
-                with patch_stdout(raw=True):
-                    text = self.session.prompt([
-                        ("fg:green bold", f"({self.context})"),
-                        ("fg:ansimagenta bold", "search"),
-                        ("", ":>$"),
-                    ], ).strip()
-
-                if text == "exit":
-                    break
-                if text in ("help", "h"):
-                    self.print(
-                        "[blue]You have to add the microservice to search[/blue]"
-                    )
-                elif text != "":
-                    namespace = self.search_microservice(text)
-                    if len(namespace) > 0:
-                        self.log(
-                            f"[blue]Namespace[/blue][reset]: [green]{namespace}[/green]"
-                        )
-                    else:
-                        self.log("[red]Not found[/red]")
-            except KeyboardInterrupt:
-                continue  # Control-C pressed. Try again.
-            except EOFError:
-                break  # Control-D pressed.
+    def _do_work(self, command=None, args=None) -> None:
+        namespace = self.search_microservice(command)
+        if len(namespace) > 0:
+            self.print(
+                f"[blue]Namespace[/blue][reset]: [green]{namespace}[/green]"
+            )
+        else:
+            self.print("[red]Not found[/red]", justify="center")

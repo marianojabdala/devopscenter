@@ -51,7 +51,7 @@ class LogsCmd(BaseCmd):
                 "[red]Error you should select the number of the pod to show the log. Eg logs 0.0[/red]"
             )
             return
-        pods = self._get_pods(self.core, self.namespace)
+        pods = self.get_pods(self.core, self.namespace)
         pod = self.get_pod(int(pod_index), pods)
         container_name = get_container_name(pod, int(container_index))
         self.__exec_and_show_logs(pod.pod_name, container_name)

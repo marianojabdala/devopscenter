@@ -7,7 +7,7 @@ from devopscenter.modules.kube.kube_manager import KubeManager
 from devopscenter.base import Base
 
 
-class Manager(Base):
+class DevopsCenter(Base):
     """
     Class that is in charge of all the interacion with kubernetes.
     This will load all the modules that needs and use the accordenly
