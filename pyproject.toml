@@ -4,9 +4,7 @@ version = "0.1.0"
 description = "Plattform for devops that has some useful commands included."
 authors = ["Abdala Mariano Jose <marianoabdala@gmail.com>"]
 license = "MIT"
-packages = [
-  {include = "devopscenter"},
-]
+packages = [{ include = "devopscenter" }]
 
 [tool.poetry.scripts]
 devopscenter = "devopscenter.__main__:main"
@@ -15,13 +13,13 @@ devopscenter = "devopscenter.__main__:main"
 line-length = 100
 
 [tool.poetry.dependencies]
-python = "^3.7"
+python = "^3.11"
 kubernetes = "^23.3.0"
 prompt-toolkit = "^3.0.29"
 rich = "^12.3.0"
 
 [tool.poetry.dev-dependencies]
-python-lsp-server = {extras = ["all"], version = "^1.3.3"}
+python-lsp-server = { extras = ["all"], version = "^1.3.3" }
 jedi = "^0.18.1"
 pylint = "^2.12.2"
 bandit = "^1.7.2"
