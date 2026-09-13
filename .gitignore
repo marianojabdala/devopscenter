@@ -1,5 +1,11 @@
-__pycache__
 # Remove editors
 .vscode
 .idea
 *.html
+
+# Rust build artifacts
+/target
+
+# Local tooling state (not project source)
+.codegraph/
+index.db
