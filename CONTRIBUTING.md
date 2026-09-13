@@ -1,8 +1,8 @@
 # Contributing
 
-`devopscenter` is a Rust binary (mid-migration from Python — see
-[`migration.md`](migration.md)). The Python code under `devopscenter/` is frozen
-and deprecated; new work happens in `src/`.
+`devopscenter` is a Rust binary. It replaced a Python implementation; see
+[`migration.md`](migration.md) for the rationale and the defects the rewrite
+fixes. All work happens in `src/`.
 
 ## Toolchain
 
@@ -23,12 +23,6 @@ cargo deny check                   # licenses / advisories / bans
 cargo audit                        # RUSTSEC advisories
 ```
 
-The Python spec suite (the behavioural contract the port must satisfy):
-
-```bash
-poetry install --no-root && poetry run pytest
-```
-
 CI (`.github/workflows/rust.yml`) runs all of the above on every push/PR.
 Tagging `vX.Y.Z` triggers `release.yml`, which cross-builds Linux
 (gnu + musl, x86_64 + aarch64), macOS (x86_64 + aarch64) and Windows binaries
@@ -45,7 +39,6 @@ with `sha256` checksums.
 | `src/repl/` | nested prompt loops, completion, history — no Kubernetes types |
 | `src/view/` | `Output` → table or JSON |
 | `docs/behaviour-catalogue.md` | the observable contract, level by level |
-| `tests/*.py` | Phase 0 correctness spec (pinned Python behaviour, with `xfail`s marking bugs the Rust port fixes) |
 | `tests/cli.rs` | non-interactive CLI integration tests |
 
 ## Conventions

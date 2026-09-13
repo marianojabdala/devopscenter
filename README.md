@@ -7,10 +7,10 @@ context, walk into a namespace, look at pods / logs / views, without retyping
 `kubectl` every time. The UI is inspired by
 [pwncat](https://github.com/calebstewart/pwncat).
 
-> **Status:** being rewritten from Python to Rust on `feature/migrate-to-rust`.
-> The Rust build is the supported one; the Python package is **deprecated** and
-> kept only as a reference (`devopscenter/`, `tests/*.py`). See
-> [`migration.md`](migration.md) and [`docs/behaviour-catalogue.md`](docs/behaviour-catalogue.md).
+> **Status:** rewritten from Python to Rust. The original Python implementation
+> has been removed; see [`migration.md`](migration.md) and
+> [`docs/behaviour-catalogue.md`](docs/behaviour-catalogue.md) for the history
+> and rationale.
 
 ## Install (Rust)
 
@@ -67,7 +67,7 @@ devopscenter view --context prod usage            # deploy|stateful|hpa|pvc|reso
 
 Add `--output json` to any of the above for machine-readable output.
 
-## Screenshots (Python UI — Rust output is equivalent)
+## Screenshots (from the original Python UI — Rust output is equivalent)
 
 | Contexts | Commands in a context | Namespaces |
 |---|---|---|
@@ -76,23 +76,3 @@ Add `--output json` to any of the above for machine-readable output.
 ## Contributing
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md).
-
----
-
-<details>
-<summary>Legacy Python install (deprecated — do not use for new work)</summary>
-
-Requires Python 3.11 and Poetry.
-
-```bash
-python3 -m venv .venv && source .venv/bin/activate
-pip install poetry
-poetry install
-pip install .
-devopscenter
-```
-
-The Python `tests/` directory is the **correctness specification** for the Rust
-port (`poetry run pytest`), not a test of a maintained product.
-
-</details>

@@ -4,94 +4,79 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-`devopscenter` is an interactive terminal REPL for day-to-day Kubernetes work, inspired by the
-pwncat UI. You launch it, pick a cluster context, then drill down through nested prompts
-(context → namespace → pod → command). The only top-level module today is `kube`.
+`devopscenter` is a single-binary, interactive terminal REPL for day-to-day Kubernetes work,
+inspired by the pwncat UI. You launch it, pick a cluster context, then drill down through nested
+prompts (context → namespace → pod → command). It also exposes each verb as a non-interactive
+`clap` subcommand for scripting. Originally written in Python, it was rewritten in Rust — see
+[`migration.md`](migration.md) for the full rationale, the defects the rewrite fixes, and the
+live-verification record.
 
 ## Commands
 
-There is no build step (it's a console script). Use Poetry + the Makefile.
-
 ```bash
-make deps            # pip install poetry --upgrade && poetry install
-poetry run devopscenter      # run the REPL (also: python -m devopscenter)
+cargo run --                 # interactive REPL
+cargo run -- contexts        # one-shot subcommand (also: ns, pods, logs, search, view)
+cargo build --release        # release binary (target/release/devopscenter)
 
-make format          # yapf -i --recursive devopscenter
-make diff            # yapf --diff (check formatting without writing)
-make lint_with_text  # pylint text output (use this locally; `make lint` needs pylint-json2html)
-make analyze         # safety + bandit security scans
+cargo test --all             # unit + CLI integration tests
+cargo fmt --all --check      # formatting (CI runs this)
+cargo clippy --all-targets -- -D warnings
+cargo deny check             # licenses / advisories / bans
+cargo audit                  # RUSTSEC advisories
 ```
 
-There is **no test suite** in this repo (no `tests/`, no pytest config). `make lint` / `make analyze`
-are the only automated checks. CI (`.github/workflows/github-actions.yml`) only runs lint + analyze,
-and its Python matrix (3.7–3.9) is stale — `pyproject.toml` requires `python ^3.11`.
+`make build` / `make check` / `make format` wrap the same commands (see `Makefile`).
 
 ## Runtime prerequisite
 
-On startup the app scans `~/.kube/` for kubeconfig files (any filename, e.g. `config_<cluster>`;
-the `cache` subdir is skipped) and loads every one. Without kubeconfigs there are no contexts and
-the REPL is empty. Cross-cutting state (namespaces cache) lives in `~/.local/share/devopscenter/`.
+On startup the tool scans `~/.kube/` recursively for kubeconfig files (any filename, e.g.
+`config_<cluster>`; any path containing `cache` is skipped) and registers **every** context in
+every file, each bound to its own `kube::Client` — there is no shared/global client state.
+History is kept at `~/.local/share/devopscenter/history.txt`.
 
 ## Architecture
 
-### Nested-REPL / command pattern
-
-Every interactive level is a class with a `start()` method running a `while True` loop that:
-reads a line from a shared `prompt_toolkit` `PromptSession`, handles `exit` and `help`/`h`,
-`shlex.split`s the rest, and dispatches. Levels:
+### Layout
 
 ```
-Manager (devops_center.py)      top prompt: "kube"
-  └─ KubeManager (kube_manager.py)   pick a context from ~/.kube
-      └─ Context (context.py)        commands: ns | search | views
-          ├─ NamespacesManager      list | create | delete | <enter a namespace>
-          │   └─ Namespaces         commands: pods | logs | exec | delete
-          ├─ Search                 substring search for a pod across all namespaces
-          └─ CustomViews            read-only cluster reports
+src/
+  main.rs              clap CLI: global flags + non-interactive subcommands, REPL is the default
+  config/               ClusterRegistry (discover kubeconfigs once) + ClusterClient (typed API handles)
+  commands/             Command trait: async fn run(&self, &ClusterClient, &[String]) -> Result<Output>
+    namespaces.rs        list / create / delete
+    pods.rs               list + delete
+    logs.rs  exec.rs  search.rs
+    views/                deploy, statefulset, hpa, pvc, pod_resources, usage, ingress
+  domain/               typed helpers with no I/O: quantity (CPU/memory parsing), container_state
+  repl/                 nested prompt loops (reedline): L0 top → L1 context picker → L2 context →
+                         {L3 namespaces → L4 namespace ops | L3 search | L3 views}; completion,
+                         file-backed history, right-hand toolbar
+  view/                 Output -> table (comfy-table) or JSON
 ```
-
-Dispatch is table-driven: a class fills `self.commands = {name: handler_instance}` and its
-`_do_work()` does `self.commands.get(name, Fallback()).start()` (sub-REPL) or `.execute(args)`
-(one-shot). Two handler families:
-- **Sub-REPLs** subclass `KubeBase`, implement `start()`, and override `_get_label`,
-  `_get_cmd_label`, `show_help`, `get_toolbar`.
-- **One-shot commands** subclass `BaseCmd` (namespace commands) or `ViewBase` (views) and
-  implement `execute(args)`.
-
-### Base classes
-
-- `base.py:Base` — `rich.Console` (`self.print`/`self.log`) + a `PromptSession` + creates the
-  `~/.local/share/devopscenter` data dir.
-- `kube_base.py:KubeBase(Base)` — its `__init__` calls `initialize_contexts()`, which loads every
-  kubeconfig and builds per-context dicts of Kubernetes API clients:
-  `cores_v1`, `apps_v1`, `autoscalings`, `custom_apis` (keyed by context name). It also provides
-  the generic `start()` loop described above.
-
-  **Gotcha:** every `KubeBase` subclass re-runs the full kubeconfig scan and rebuilds all API
-  clients in its constructor. Instantiating handlers (as `_register_commands` does eagerly) repeats
-  this work many times. Keep this in mind before adding constructors or new command classes.
-
-### Supporting code
-
-- `modules/kube/models/pod.py:PodInfo` — wraps a k8s pod object (+ its API client) with the
-  container/status accessors the views and commands rely on.
-- `modules/kube/cluster_utils.py` — pure helpers: `get_pods`, `get_namespace_names`, and unit
-  conversions (`convert_to_milicore` nanocore/microcore→millicore, `convert_to_mi` Ki→Mi).
-- `modules/kube/views/*` — one class per read-only report (`pvc`, `deploy`, `stateful`, `hpa`,
-  `ingress`, `resources`, `pod_resources`, `usage`); all extend `ViewBase`.
-- `not_found.py` / `BaseCmd.execute` / `ViewBase.execute` — the "command not found" fallbacks used
-  as the default in every `self.commands.get(...)`.
 
 ### Conventions
 
-- User-facing output goes through `self.print` / `self.log` with `rich` markup (`[green]...[/green]`).
-- Every REPL loop swallows `KeyboardInterrupt` (continue) and `EOFError` (break) — preserve this
-  when adding loops.
-- Kubernetes calls should catch `kubernetes.client.exceptions.ApiException`.
-- `pyproject.toml` sets black/yapf line length 100; formatting is enforced by `make diff`, not tox.
+- **Commands never print.** They return an `Output` enum (`Empty`/`Text`/`Table`); `src/view`
+  renders it. This keeps commands unit-testable and makes `--output json` work everywhere.
+- **No fragile string logic.** CPU/memory quantities and container state go through
+  `src/domain` — never match on substrings of a Kubernetes field.
+- **One `kube::Client` per context**, built once by `ClusterRegistry::discover()` and injected
+  into commands; constructors do no I/O. This structurally prevents the multi-cluster binding bug
+  the Python version had (documented as O1 in `migration.md`).
+- Kubernetes calls return `anyhow::Result`; errors carry context rather than being swallowed.
+- `docs/behaviour-catalogue.md` records the observable contract (prompts, columns, messages)
+  level by level; deliberate divergences from the original Python behaviour are noted there and
+  in `migration.md` §2.3 / §8b.
 
-## Note on the current branch
+## CI / release
 
-`feature/migrate-to-rust` is checked out, but the codebase is still 100% Python — no Rust/Cargo
-files exist yet. Recent history is a refactor of the original single-file tool into the
-`modules/kube/...` package layout.
+`.github/workflows/rust.yml` runs fmt/clippy/test plus a `cargo deny` + `cargo audit`
+supply-chain job on every push/PR. Tagging `vX.Y.Z` triggers `.github/workflows/release.yml`,
+which cross-builds Linux (gnu + musl, x86_64 + aarch64), macOS (x86_64 + aarch64), and Windows
+binaries with `sha256` checksums and publishes them as GitHub Release assets.
+
+## Note on history
+
+The original Python implementation (a `prompt_toolkit` + `rich` + `kubernetes` client REPL) has
+been removed. `migration.md` is the record of that rewrite: the defects found in the Python code,
+the architectural decisions, and the live-cluster verification performed before cutover.
