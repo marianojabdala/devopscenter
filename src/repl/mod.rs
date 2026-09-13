@@ -18,13 +18,18 @@ use reedline::{
 };
 
 use crate::commands::{
+    describe::PodDescribe,
+    events::NamespaceEvents,
     exec::PodExec,
     logs::PodLogs,
     namespaces::{namespace_names, NamespaceCreate, NamespaceDelete, NamespacesList},
     pods::{PodDelete, PodsList},
+    rollout::RolloutStatus,
     search::PodSearch,
+    summary::NamespaceSummary,
     views::{
-        DeployView, HpaView, IngressView, PodResourcesView, PvcView, StatefulsetView, UsageView,
+        DeployView, HpaView, IngressView, NodeDescribe, NodesView, PodResourcesView, PvcView,
+        StatefulsetView, UsageView,
     },
     Command, Output,
 };
@@ -320,9 +325,24 @@ async fn namespace_ops_menu(
         Box::new(PodDelete {
             namespace: ns.clone(),
         }),
+        Box::new(PodDescribe {
+            namespace: ns.clone(),
+        }),
+        Box::new(NamespaceEvents {
+            namespace: ns.clone(),
+        }),
+        Box::new(RolloutStatus {
+            namespace: ns.clone(),
+        }),
+        Box::new(NamespaceSummary { namespace: ns }),
     ];
     let label = format!("({}):{}", cluster.context(), namespace);
-    let prompt = LevelPrompt::with_toolbar(label, &["pods", "logs", "exec", "delete"]);
+    let prompt = LevelPrompt::with_toolbar(
+        label,
+        &[
+            "pods", "logs", "exec", "delete", "describe", "events", "rollout", "summary",
+        ],
+    );
     let mut words: Vec<&str> = verbs(&cmds);
     words.extend(["help", "exit"]);
 
@@ -394,6 +414,8 @@ async fn views_menu(sess: &mut Session, cluster: &ClusterClient) -> Result<()> {
         Box::new(PodResourcesView),
         Box::new(UsageView),
         Box::new(IngressView),
+        Box::new(NodesView),
+        Box::new(NodeDescribe),
     ];
     let label = format!("({}):views", cluster.context());
     let toolbar: Vec<&str> = verbs(&cmds);

@@ -77,11 +77,14 @@ Legend: `⇥` = word-completion active, `⌃C` = Ctrl-C, `⌃D` = Ctrl-D / EOF.
 - One row per *container* of each pod that has container statuses; row key `N°` = `"<pod_index>.<container_index>"` (both 0-based, in list order).
 - `State` ⚠ O8: only ever `Running` (container `ready` truthy) or `Not Ready` (otherwise). `Container` info suffix `-<info>` is always empty here. **Rust spec:** real state from container `state`/`last_state`/phase via exhaustive match; keep the `p.c` numbering.
 - Pods with no container statuses produce no rows.
+- **Rust divergence:** `pods [filter]` takes an optional trailing substring; pods whose name doesn't contain it (case-insensitive) are hidden from the table. The `N°` index is still computed against the *unfiltered* list, so a filtered row's index still resolves correctly against `logs`/`exec`/`delete`, which always re-list unfiltered. The Python version had no such filter.
+- **Rust divergence:** `pods --unhealthy` (or `-u`) replaces the name filter with a health filter: keeps only pods with a non-`Running`/non-cleanly-`Completed` container, or a `Failed` pod, or a pod with no container statuses yet (still scheduling) — the last case gets a synthetic row with no `.container` index (same convention `resolve` gives a container-less selector), since it has no containers to enumerate.
 
 ### L4 `logs` (`logs.py`)
 - Usage: `logs <pod_index>.<container_index>`. Missing/!`.`-formatted arg → `Error you should select the number of the pod to show the log. Eg logs 0.0`.
 - Streams `read_namespaced_pod_log(..., _preload_content=False)` line by line to stdout, decoded UTF-8.
 - `⌃C` during stream → prints `Breaking logs` and returns to prompt (does not exit level). `ApiException`/other exceptions are logged and swallowed.
+- **Rust divergence:** `logs <selector> -p`/`--previous` shows the log of the container's previous (already-terminated) instance — the single most useful thing for a crash-looping pod, since the *current* instance's log is often empty. No Python equivalent.
 
 ### L4 `exec` (`exec.py`)
 - Usage: `exec <pod_index>.<container_index> <cmd...>`.
@@ -90,6 +93,21 @@ Legend: `⇥` = word-completion active, `⌃C` = Ctrl-C, `⌃D` = Ctrl-D / EOF.
 ### L4 `delete` (`delete.py`)
 - Usage: `delete <pod_index>.<anything>` (only the part before `.` is used).
 - `delete_namespaced_pod(pod_name, namespace)`. Bad index → `The number is not in the list of pods` (from `BaseCmd.get_pod`). ⚠ O6: guard checks `len(args) == 0` then reads `args[1]`.
+
+### L4 `describe` — Rust-only, no Python equivalent
+- Usage: `describe <pod_index>` (a `.<container_index>` suffix is accepted but ignored — always describes every container).
+- `kubectl describe pod`-style text: metadata, labels/annotations, owner, status/IP/QoS, one block per container (image, ports, state, ready, restart count, requests/limits), and conditions.
+
+### L4 `events` — Rust-only, no Python equivalent
+- Usage: `events` (no selector — shows every event in the namespace, not just one pod's).
+- Table `Type, Reason, Object, Age, Message`, sorted oldest-first by last-seen time (falls back to first-seen, then `event_time`).
+
+### L4 `rollout` — Rust-only, no Python equivalent
+- Usage: `rollout <deployment-name>`.
+- Polls the Deployment every 2s (up to ~60s) until `observedGeneration` has caught up and `updated`/`available`/`replicas` all equal the desired count, or times out; either way prints a final status line with the actual counts.
+
+### L4 `summary` — Rust-only, no Python equivalent
+- Usage: `summary` (no args). One-shot namespace rollup: pod count + how many are unhealthy (crash looping / pending / failed), deployment count + how many are fully rolled out, statefulset count + how many are ready, service count, and PVC count + how many are bound.
 
 ## L3-search (`Search`, `search.py`)
 
@@ -114,6 +132,8 @@ Legend: `⇥` = word-completion active, `⌃C` = Ctrl-C, `⌃D` = Ctrl-D / EOF.
 | `resources` | all-cluster pod scan (`get_pods`) | `rich` **Panels**, not a table | pod order | one panel per container: title `Namespace: <ns> -Container: <name>`, body `Requests: <dict>\nLimits: <dict>` |
 | `usage` | `list_cluster_custom_object(metrics.k8s.io/v1beta1, pods)` | `Namespace, Pod Name, Container Name, Cpu, Memory` | **by memory desc** (string sort ⚠) | `Cpu` via `convert_to_milicore`, `Memory` via `convert_to_mi(...)+"Mi"` — both ⚠ O4 |
 | `ingress` | ⚠ O5 `list_cluster_custom_object(group="extensions", version="v1", plural="ingresses")` | `Namespace, Ingress Name, Annotations` | dict order | filters annotations to keys containing `ingress.kubernetes.io`; ⚠ O5b `pretty_annotations` is called with a list and raises `AttributeError`. **Rust spec:** `networking.k8s.io/v1`, render annotation `k:v` lines |
+| `nodes` — **Rust-only, no Python equivalent** | `Api::<Node>::all` + `metrics.k8s.io/v1beta1 NodeMetrics` (best-effort — missing metrics-server shows `-`, not an error) | `Name, Status, Roles, Age, Version, Cpu%, Mem%` | API order | `Status` is the `Ready` condition plus any other condition currently `True` appended (e.g. `NotReady,MemoryPressure`); `Roles` from `node-role.kubernetes.io/*` labels |
+| `describe-node` — **Rust-only, no Python equivalent** | `Api::<Node>::all().get(name)` | free text, not a table | — | `filter` arg is the (required) node name, not a substring — node names are unique so there's nothing to filter/index. `kubectl describe node`-style: labels/annotations, addresses, OS/kernel/runtime/kubelet versions, taints, capacity vs. allocatable, conditions |
 
 ---
 

@@ -44,10 +44,14 @@ src/
   config/               ClusterRegistry (discover kubeconfigs once) + ClusterClient (typed API handles)
   commands/             Command trait: async fn run(&self, &ClusterClient, &[String]) -> Result<Output>
     namespaces.rs        list / create / delete
-    pods.rs               list + delete
+    pods.rs               list + delete (+ --unhealthy filter)
     logs.rs  exec.rs  search.rs
-    views/                deploy, statefulset, hpa, pvc, pod_resources, usage, ingress
-  domain/               typed helpers with no I/O: quantity (CPU/memory parsing), container_state
+    describe.rs           kubectl-describe-style pod summary
+    events.rs             every event in a namespace, oldest first
+    rollout.rs            poll a Deployment's rollout until it settles
+    summary.rs            one-shot namespace health rollup
+    views/                deploy, statefulset, hpa, pvc, pod_resources, usage, ingress, nodes, node_describe
+  domain/               typed helpers with no I/O: quantity (CPU/memory parsing), container_state, age
   repl/                 nested prompt loops (reedline): L0 top → L1 context picker → L2 context →
                          {L3 namespaces → L4 namespace ops | L3 search | L3 views}; completion,
                          file-backed history, right-hand toolbar

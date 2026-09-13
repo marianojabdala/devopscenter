@@ -4,11 +4,15 @@
 //! unit-testable against a mock API and lets the same output feed a future
 //! `--output json` mode (migration.md §3.2, §7).
 
+pub mod describe;
+pub mod events;
 pub mod exec;
 pub mod logs;
 pub mod namespaces;
 pub mod pods;
+pub mod rollout;
 pub mod search;
+pub mod summary;
 pub mod views;
 
 use anyhow::Result;

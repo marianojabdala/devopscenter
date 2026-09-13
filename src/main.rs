@@ -16,12 +16,17 @@ use clap::{Parser, Subcommand};
 use tracing_subscriber::EnvFilter;
 
 use commands::{
+    describe::PodDescribe,
+    events::NamespaceEvents,
     logs::PodLogs,
     namespaces::{NamespaceCreate, NamespaceDelete, NamespacesList},
     pods::PodsList,
+    rollout::RolloutStatus,
     search::PodSearch,
+    summary::NamespaceSummary,
     views::{
-        DeployView, HpaView, IngressView, PodResourcesView, PvcView, StatefulsetView, UsageView,
+        DeployView, HpaView, IngressView, NodeDescribe, NodesView, PodResourcesView, PvcView,
+        StatefulsetView, UsageView,
     },
     Command,
 };
@@ -64,6 +69,11 @@ enum SubCmd {
         context: String,
         #[arg(long, short)]
         namespace: String,
+        /// Only show pods whose name contains this substring.
+        filter: Option<String>,
+        /// Only show pods that aren't healthy (crash looping, pending, failed, ...).
+        #[arg(long, short)]
+        unhealthy: bool,
     },
     /// Print a pod container's log.
     Logs {
@@ -73,6 +83,40 @@ enum SubCmd {
         namespace: String,
         /// `<pod_index>.<container_index>` (container part optional).
         selector: String,
+        /// Show the log of the previous (already terminated) container instance.
+        #[arg(long, short = 'p')]
+        previous: bool,
+    },
+    /// Describe a pod (like `kubectl describe pod`).
+    Describe {
+        #[arg(long, short)]
+        context: String,
+        #[arg(long, short)]
+        namespace: String,
+        /// `<pod_index>` (a `.<container_index>` suffix is accepted but ignored).
+        selector: String,
+    },
+    /// Show every event in a namespace, oldest first.
+    Events {
+        #[arg(long, short)]
+        context: String,
+        #[arg(long, short)]
+        namespace: String,
+    },
+    /// Poll a deployment's rollout until it settles (or ~60s pass).
+    Rollout {
+        #[arg(long, short)]
+        context: String,
+        #[arg(long, short)]
+        namespace: String,
+        deployment: String,
+    },
+    /// One-shot namespace health rollup (pods/deployments/statefulsets/services/pvcs).
+    Summary {
+        #[arg(long, short)]
+        context: String,
+        #[arg(long, short)]
+        namespace: String,
     },
     /// Search for pods whose name contains a substring, across all namespaces.
     Search {
@@ -84,9 +128,9 @@ enum SubCmd {
     View {
         #[arg(long, short)]
         context: String,
-        /// deploy | stateful | hpa | pvc | resources | usage | ingress
+        /// deploy | stateful | hpa | pvc | resources | usage | ingress | nodes | describe-node
         name: String,
-        /// Optional substring filter on the resource name.
+        /// Substring filter on the resource name (or, for describe-node, the node name).
         filter: Option<String>,
     },
 }
@@ -172,19 +216,59 @@ async fn run_once(registry: &ClusterRegistry, sub: SubCmd) -> Result<()> {
                 vec!["delete".into(), name],
             ),
         },
-        SubCmd::Pods { context, namespace } => (
+        SubCmd::Pods {
             context,
-            Box::new(PodsList { namespace }),
-            vec!["pods".into()],
-        ),
+            namespace,
+            filter,
+            unhealthy,
+        } => {
+            let mut args = vec!["pods".into()];
+            if unhealthy {
+                args.push("--unhealthy".into());
+            } else {
+                args.extend(filter);
+            }
+            (context, Box::new(PodsList { namespace }), args)
+        }
         SubCmd::Logs {
+            context,
+            namespace,
+            selector,
+            previous,
+        } => {
+            let mut args = vec!["logs".into(), selector];
+            if previous {
+                args.push("--previous".into());
+            }
+            (context, Box::new(PodLogs { namespace }), args)
+        }
+        SubCmd::Describe {
             context,
             namespace,
             selector,
         } => (
             context,
-            Box::new(PodLogs { namespace }),
-            vec!["logs".into(), selector],
+            Box::new(PodDescribe { namespace }),
+            vec!["describe".into(), selector],
+        ),
+        SubCmd::Events { context, namespace } => (
+            context,
+            Box::new(NamespaceEvents { namespace }),
+            vec!["events".into()],
+        ),
+        SubCmd::Rollout {
+            context,
+            namespace,
+            deployment,
+        } => (
+            context,
+            Box::new(RolloutStatus { namespace }),
+            vec!["rollout".into(), deployment],
+        ),
+        SubCmd::Summary { context, namespace } => (
+            context,
+            Box::new(NamespaceSummary { namespace }),
+            vec!["summary".into()],
         ),
         SubCmd::Search { context, term } => {
             (context, Box::new(PodSearch), vec!["search".into(), term])
@@ -218,6 +302,8 @@ fn view_by_name(name: &str) -> Option<Box<dyn Command>> {
         "resources" => Box::new(PodResourcesView),
         "usage" => Box::new(UsageView),
         "ingress" => Box::new(IngressView),
+        "nodes" => Box::new(NodesView),
+        "describe-node" => Box::new(NodeDescribe),
         _ => return None,
     })
 }

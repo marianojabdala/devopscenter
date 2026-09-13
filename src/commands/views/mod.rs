@@ -7,6 +7,8 @@
 mod deploy;
 mod hpa;
 mod ingress;
+mod node_describe;
+mod nodes;
 mod pod_resources;
 mod pvc;
 mod statefulset;
@@ -15,6 +17,8 @@ mod usage;
 pub use deploy::DeployView;
 pub use hpa::HpaView;
 pub use ingress::IngressView;
+pub use node_describe::NodeDescribe;
+pub use nodes::NodesView;
 pub use pod_resources::PodResourcesView;
 pub use pvc::PvcView;
 pub use statefulset::StatefulsetView;
