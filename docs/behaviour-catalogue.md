@@ -96,7 +96,9 @@ Legend: `⇥` = word-completion active, `⌃C` = Ctrl-C, `⌃D` = Ctrl-D / EOF.
 
 ### L4 `describe` — Rust-only, no Python equivalent
 - Usage: `describe <pod_index>` (a `.<container_index>` suffix is accepted but ignored — always describes every container).
-- `kubectl describe pod`-style text: metadata, labels/annotations, owner, status/IP/QoS, one block per container (image, ports, state, ready, restart count, requests/limits), and conditions.
+- `kubectl describe pod`-style text: metadata, labels/annotations, owner, status/IP/QoS, one block per container, and conditions.
+- Each container block: image, ports, **State** (kind + `Reason`/`Message`/`Exit Code`/`Started`/`Finished` as available — the `Message` is the actual "back-off restarting failed container..." text, not just the `CrashLoopBackOff` reason word), **Last State** (same detail for the previous run, shown only when it carries real data), ready, restart count, requests/limits.
+- Trailing **Events** section: every event whose `involvedObject.name` matches this pod (best-effort — a fetch failure, e.g. no RBAC, just omits the section rather than failing the whole command), oldest-first with `Type/Reason/Age/Message`.
 
 ### L4 `events` — Rust-only, no Python equivalent
 - Usage: `events` (no selector — shows every event in the namespace, not just one pod's).

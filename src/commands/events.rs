@@ -11,7 +11,7 @@ use super::{Command, Output};
 use crate::config::ClusterClient;
 use crate::domain::age;
 
-async fn list_events(ctx: &ClusterClient, namespace: &str) -> Result<Vec<Event>> {
+pub(crate) async fn list_events(ctx: &ClusterClient, namespace: &str) -> Result<Vec<Event>> {
     Ok(Api::<Event>::namespaced(ctx.client(), namespace)
         .list(&ListParams::default())
         .await
@@ -21,7 +21,7 @@ async fn list_events(ctx: &ClusterClient, namespace: &str) -> Result<Vec<Event>>
 
 /// Sort key: last-seen time (falls back to first-seen, then event_time),
 /// oldest first — matches `kubectl get events`.
-fn last_seen_secs(event: &Event) -> i64 {
+pub(crate) fn last_seen_secs(event: &Event) -> i64 {
     event
         .last_timestamp
         .as_ref()
@@ -31,21 +31,27 @@ fn last_seen_secs(event: &Event) -> i64 {
         .unwrap_or(0)
 }
 
+/// Age string for one event, matching the `events` table's rule: last-seen
+/// time, falling back to `event_time`, else `<unknown>`.
+pub(crate) fn event_age(event: &Event, now: i64) -> String {
+    event
+        .last_timestamp
+        .as_ref()
+        .map(|t| age::format_secs(age::secs_since(now, t)))
+        .or_else(|| {
+            event
+                .event_time
+                .as_ref()
+                .map(|t| age::format_secs(age::secs_since_micro(now, t)))
+        })
+        .unwrap_or_else(|| "<unknown>".into())
+}
+
 pub(crate) fn events_table(mut events: Vec<Event>) -> Output {
     events.sort_by_key(last_seen_secs);
     let now = age::now_secs();
     let rows = events.iter().map(|event| {
-        let age = event
-            .last_timestamp
-            .as_ref()
-            .map(|t| age::format_secs(age::secs_since(now, t)))
-            .or_else(|| {
-                event
-                    .event_time
-                    .as_ref()
-                    .map(|t| age::format_secs(age::secs_since_micro(now, t)))
-            })
-            .unwrap_or_else(|| "<unknown>".into());
+        let age = event_age(event, now);
         let object = match &event.involved_object.kind {
             Some(kind) => format!(
                 "{kind}/{}",
