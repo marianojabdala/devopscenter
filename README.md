@@ -48,10 +48,15 @@ devopscenter
 ```
 
 Prompt ladder: `kube` → pick a context → `ns` / `search` / `views`.
-`ns <name>` walks into a namespace (`pods`, `logs <p>.<c>`, `exec <p>.<c> <cmd…>`,
-`delete <p>.<c>`). `help`/`h` lists the current level's commands; `exit` or
-Ctrl-D leaves it; Tab completes. History is kept in
-`~/.local/share/devopscenter/history.txt`.
+`ns <name>` walks into a namespace (`pods`, `logs <p>.<c>` [`-p`/`--previous` for
+a crashed container's last log], `exec <p>.<c> <cmd…>`, `delete <p>.<c>`,
+`describe <p>`, `events`, `rollout <deployment>`, `summary`). `help`/`h` lists
+the current level's commands; `exit` or Ctrl-D leaves it; Tab completes.
+History is kept in `~/.local/share/devopscenter/history.txt`.
+
+Debugging shortcuts: `pods --unhealthy` (or `-u`) filters to only broken pods
+(crash looping, pending, failed) in the current namespace; `summary` gives a
+one-shot health rollup of the namespace before you drill in.
 
 ### Non-interactive (scripting)
 
@@ -60,9 +65,17 @@ devopscenter contexts
 devopscenter ns   --context prod list
 devopscenter ns   --context prod create my-namespace
 devopscenter pods --context prod --namespace default
+devopscenter pods --context prod --namespace default api    # filter by name substring
+devopscenter pods --context prod --namespace default --unhealthy   # only broken pods
 devopscenter logs --context prod --namespace default 0.0
+devopscenter logs --context prod --namespace default 0.0 --previous  # last crashed instance
+devopscenter describe --context prod --namespace default 0.0
+devopscenter events --context prod --namespace default
+devopscenter rollout --context prod --namespace default my-deployment
+devopscenter summary --context prod --namespace default
 devopscenter search --context prod payments
-devopscenter view --context prod usage            # deploy|stateful|hpa|pvc|resources|usage|ingress
+devopscenter view --context prod usage            # deploy|stateful|hpa|pvc|resources|usage|ingress|nodes
+devopscenter view --context prod describe-node my-node-name
 ```
 
 Add `--output json` to any of the above for machine-readable output.

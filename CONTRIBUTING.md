@@ -28,6 +28,25 @@ Tagging `vX.Y.Z` triggers `release.yml`, which cross-builds Linux
 (gnu + musl, x86_64 + aarch64), macOS (x86_64 + aarch64) and Windows binaries
 with `sha256` checksums.
 
+## Cutting a release
+
+`Cargo.toml`'s `version` (what `devopscenter --version` prints, via clap's
+`version` derive) and the git tag are two separate things — nothing keeps
+them in sync automatically. Use `scripts/release.sh` (or `make release`)
+instead of tagging by hand:
+
+```bash
+make release BUMP=patch      # 1.2.3 -> 1.2.4
+make release BUMP=minor      # 1.2.3 -> 1.3.0
+make release BUMP=major      # 1.2.3 -> 2.0.0
+make release VERSION=1.2.3   # explicit version
+```
+
+This bumps `Cargo.toml`, refreshes `Cargo.lock`, and creates a local commit +
+annotated `vX.Y.Z` tag — it does **not** push. Review with `git show HEAD` /
+`git show vX.Y.Z`, then `git push && git push origin vX.Y.Z` to publish
+(pushing the tag is what triggers `release.yml`).
+
 ## Project layout
 
 | Path | Responsibility |

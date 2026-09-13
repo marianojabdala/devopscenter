@@ -6,7 +6,7 @@ use kube::api::{Api, DeleteParams, ListParams};
 
 use super::{Command, Output};
 use crate::config::ClusterClient;
-use crate::domain::container_state;
+use crate::domain::container_state::{self, DisplayState};
 
 pub(crate) fn pods_api(ctx: &ClusterClient, namespace: &str) -> Api<Pod> {
     Api::namespaced(ctx.client(), namespace)
@@ -54,12 +54,87 @@ fn container_names(pod: &Pod) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// How `pods` narrows the list. The `N°` index in every row is always the
+/// pod's position in the *unfiltered* list (see [`pods_table`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PodsFilter<'a> {
+    All,
+    /// Case-insensitive substring match on pod name.
+    Name(&'a str),
+    /// Any container not `Running` (or cleanly `Completed`), or a pod with no
+    /// container statuses yet (still `Pending`/scheduling) — the "what's
+    /// actually broken in this namespace" view.
+    Unhealthy,
+}
+
+impl<'a> PodsFilter<'a> {
+    /// `args[1]` decides the filter: `--unhealthy`/`-u` selects
+    /// [`PodsFilter::Unhealthy`], anything else is a name substring.
+    pub(crate) fn from_args(args: &'a [String]) -> Self {
+        match args.get(1).map(String::as_str) {
+            None => PodsFilter::All,
+            Some("--unhealthy" | "-u") => PodsFilter::Unhealthy,
+            Some(name) => PodsFilter::Name(name),
+        }
+    }
+}
+
+/// A container is healthy if it's running, or terminated because it
+/// completed normally (a Job's pod, say) — anything else (crash looping,
+/// image pull errors, OOMKilled, ...) counts as unhealthy.
+fn container_is_healthy(state: &DisplayState) -> bool {
+    match state {
+        DisplayState::Running => true,
+        DisplayState::Terminated { reason: Some(r) } if r == "Completed" => true,
+        _ => false,
+    }
+}
+
+pub(crate) fn pod_is_unhealthy(pod: &Pod) -> bool {
+    let phase = pod.status.as_ref().and_then(|s| s.phase.as_deref());
+    if phase == Some("Failed") {
+        return true;
+    }
+    match pod
+        .status
+        .as_ref()
+        .and_then(|s| s.container_statuses.as_ref())
+    {
+        None => phase != Some("Succeeded"),
+        Some(statuses) if statuses.is_empty() => phase != Some("Succeeded"),
+        Some(statuses) => statuses
+            .iter()
+            .any(|cs| !container_is_healthy(&container_state::derive(cs))),
+    }
+}
+
 /// Build the `pods` table: one row per container that has a status, keyed
 /// `"<pod_index>.<container_index>"`. Pure so it can be unit-tested.
-pub(crate) fn pods_table(pods: &[Pod]) -> Output {
+///
+/// A name filter hides pods whose name doesn't match, but the `N°` index
+/// still reflects each pod's position in the *unfiltered* list, so a printed
+/// index like `3.0` still resolves correctly against `logs`/`exec`/`delete`,
+/// which always re-list unfiltered. Under [`PodsFilter::Unhealthy`], a pod
+/// with no container statuses yet still gets a row (index with no `.`, same
+/// convention `resolve` already gives a container-less selector) so a stuck
+/// `Pending` pod is visible instead of silently dropped.
+pub(crate) fn pods_table(pods: &[Pod], filter: PodsFilter) -> Output {
     let mut rows: Vec<[String; 5]> = Vec::new();
     for (pi, pod) in pods.iter().enumerate() {
         let name = pod.metadata.name.clone().unwrap_or_default();
+        match filter {
+            PodsFilter::All => {}
+            PodsFilter::Name(f) => {
+                if !name.to_lowercase().contains(&f.to_lowercase()) {
+                    continue;
+                }
+            }
+            PodsFilter::Unhealthy => {
+                if !pod_is_unhealthy(pod) {
+                    continue;
+                }
+            }
+        }
         let node = pod
             .spec
             .as_ref()
@@ -69,21 +144,34 @@ pub(crate) fn pods_table(pods: &[Pod]) -> Output {
             .status
             .as_ref()
             .and_then(|s| s.container_statuses.as_ref());
-        let Some(statuses) = statuses else { continue };
-        for (ci, cs) in statuses.iter().enumerate() {
-            rows.push([
-                format!("{pi}.{ci}"),
-                name.clone(),
-                cs.name.clone(),
-                container_state::derive(cs).label(),
-                node.clone(),
-            ]);
+        match statuses {
+            Some(statuses) if !statuses.is_empty() => {
+                for (ci, cs) in statuses.iter().enumerate() {
+                    rows.push([
+                        format!("{pi}.{ci}"),
+                        name.clone(),
+                        cs.name.clone(),
+                        container_state::derive(cs).label(),
+                        node.clone(),
+                    ]);
+                }
+            }
+            _ if filter == PodsFilter::Unhealthy => {
+                let phase = pod
+                    .status
+                    .as_ref()
+                    .and_then(|s| s.phase.clone())
+                    .unwrap_or_else(|| "Unknown".into());
+                rows.push([pi.to_string(), name.clone(), "<none>".into(), phase, node]);
+            }
+            _ => {}
         }
     }
     Output::table(["N°", "Pod", "Container", "State", "Node"], rows)
 }
 
-/// `pods` — list every pod/container in the namespace.
+/// `pods [filter | --unhealthy]` — list pods/containers in the namespace,
+/// optionally restricted to a name substring or to unhealthy pods.
 pub struct PodsList {
     pub namespace: String,
 }
@@ -94,10 +182,11 @@ impl Command for PodsList {
         "pods"
     }
     fn help(&self) -> &'static str {
-        "Shows the pods"
+        "Shows the pods (pods <name-substring>, or pods --unhealthy)"
     }
-    async fn run(&self, ctx: &ClusterClient, _args: &[String]) -> Result<Output> {
-        Ok(pods_table(&list_pods(ctx, &self.namespace).await?))
+    async fn run(&self, ctx: &ClusterClient, args: &[String]) -> Result<Output> {
+        let pods = list_pods(ctx, &self.namespace).await?;
+        Ok(pods_table(&pods, PodsFilter::from_args(args)))
     }
 }
 
@@ -184,7 +273,7 @@ mod tests {
             ),
             pod("job-1", "node-b", Some(vec![cs("run", true)])),
         ];
-        let Output::Table { headers, rows } = pods_table(&pods) else {
+        let Output::Table { headers, rows } = pods_table(&pods, PodsFilter::All) else {
             panic!("expected table");
         };
         assert_eq!(headers, ["N°", "Pod", "Container", "State", "Node"]);
@@ -197,7 +286,7 @@ mod tests {
     #[test]
     fn pods_without_statuses_contribute_no_rows() {
         let pods = vec![pod("pending-0", "", None)];
-        let Output::Table { rows, .. } = pods_table(&pods) else {
+        let Output::Table { rows, .. } = pods_table(&pods, PodsFilter::All) else {
             panic!("expected table");
         };
         assert!(rows.is_empty());
@@ -218,5 +307,87 @@ mod tests {
         assert!(c_none.is_none());
 
         assert!(resolve(&pods, "9").is_err());
+    }
+
+    #[test]
+    fn filter_hides_non_matching_pods_but_keeps_original_index() {
+        let pods = vec![
+            pod("web-0", "node-a", Some(vec![cs("app", true)])),
+            pod("worker-1", "node-b", Some(vec![cs("run", true)])),
+        ];
+        let Output::Table { rows, .. } = pods_table(&pods, PodsFilter::Name("web")) else {
+            panic!("expected table");
+        };
+        // Only the matching pod is shown, but its index (0) is the position
+        // in the *unfiltered* list, so `exec`/`logs`/`delete 0.0` still
+        // resolve to the right pod.
+        assert_eq!(rows, vec![["0.0", "web-0", "app", "Running", "node-a"]]);
+    }
+
+    #[test]
+    fn filter_is_case_insensitive() {
+        let pods = vec![pod("Web-0", "n", Some(vec![cs("app", true)]))];
+        let Output::Table { rows, .. } = pods_table(&pods, PodsFilter::Name("WEB")) else {
+            panic!("expected table");
+        };
+        assert_eq!(rows.len(), 1);
+    }
+
+    #[test]
+    fn from_args_recognises_the_unhealthy_flag() {
+        assert_eq!(PodsFilter::from_args(&["pods".into()]), PodsFilter::All);
+        assert_eq!(
+            PodsFilter::from_args(&["pods".into(), "web".into()]),
+            PodsFilter::Name("web")
+        );
+        assert_eq!(
+            PodsFilter::from_args(&["pods".into(), "--unhealthy".into()]),
+            PodsFilter::Unhealthy
+        );
+        assert_eq!(
+            PodsFilter::from_args(&["pods".into(), "-u".into()]),
+            PodsFilter::Unhealthy
+        );
+    }
+
+    #[test]
+    fn unhealthy_filter_keeps_only_broken_pods_with_original_index() {
+        let pods = vec![
+            pod("web-0", "node-a", Some(vec![cs("app", true)])), // healthy
+            pod("web-1", "node-a", Some(vec![cs("app", false)])), // not ready
+        ];
+        let Output::Table { rows, .. } = pods_table(&pods, PodsFilter::Unhealthy) else {
+            panic!("expected table");
+        };
+        assert_eq!(rows, vec![["1.0", "web-1", "app", "Not Ready", "node-a"]]);
+    }
+
+    #[test]
+    fn unhealthy_filter_surfaces_pods_with_no_container_statuses() {
+        let pods = vec![pod("pending-0", "", None)];
+        let Output::Table { rows, .. } = pods_table(&pods, PodsFilter::Unhealthy) else {
+            panic!("expected table");
+        };
+        // No container index — same convention as a container-less `resolve` selector.
+        assert_eq!(rows, vec![["0", "pending-0", "<none>", "Unknown", ""]]);
+    }
+
+    #[test]
+    fn unhealthy_filter_excludes_completed_job_pods() {
+        let mut completed = cs("app", true);
+        completed.state = Some(ContainerState {
+            terminated: Some(k8s_openapi::api::core::v1::ContainerStateTerminated {
+                reason: Some("Completed".into()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
+        let mut pod_status = pod("job-0", "node-a", Some(vec![completed]));
+        pod_status.status.as_mut().unwrap().phase = Some("Succeeded".into());
+
+        let Output::Table { rows, .. } = pods_table(&[pod_status], PodsFilter::Unhealthy) else {
+            panic!("expected table");
+        };
+        assert!(rows.is_empty());
     }
 }

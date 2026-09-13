@@ -5,6 +5,8 @@
 //!   `convert_to_mi`; migration.md O4).
 //! * [`container_state`] — exhaustive container-state derivation (replaces the
 //!   collapsed `or`-chain; O8).
+//! * [`age`] — Kubernetes-style relative-age formatting, used by `events`.
 
+pub mod age;
 pub mod container_state;
 pub mod quantity;
