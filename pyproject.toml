@@ -26,6 +26,16 @@ bandit = "^1.7.2"
 yapf = "^0.32.0"
 pylint-json2html = "^0.4.0"
 safety = "^1.10.3"
+pytest = "^8.2"
+
+[tool.pytest.ini_options]
+# Phase 0 of the Rust migration: these tests are a *correctness specification*,
+# not a bug-for-bug snapshot. See migration.md and docs/behaviour-catalogue.md.
+# Places where today's Python deviates from the spec are marked xfail(strict=True)
+# so the Rust port has an explicit "must fix" list.
+testpaths = ["tests"]
+xfail_strict = true
+filterwarnings = ["ignore::DeprecationWarning"]
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]

@@ -3,3 +3,10 @@ __pycache__
 .vscode
 .idea
 *.html
+
+# Rust build artifacts
+/target
+
+# Local tooling state (not project source)
+.codegraph/
+index.db
