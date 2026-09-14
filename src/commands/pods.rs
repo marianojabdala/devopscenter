@@ -6,6 +6,7 @@ use kube::api::{Api, DeleteParams, ListParams};
 
 use super::{Command, Output};
 use crate::config::ClusterClient;
+use crate::domain::age;
 use crate::domain::container_state::{self, DisplayState};
 
 pub(crate) fn pods_api(ctx: &ClusterClient, namespace: &str) -> Api<Pod> {
@@ -108,6 +109,29 @@ pub(crate) fn pod_is_unhealthy(pod: &Pod) -> bool {
     }
 }
 
+/// `<unknown>` if the pod has no `creationTimestamp` yet (shouldn't happen for
+/// a pod the API server has returned, but the field is optional in the type).
+fn pod_age(pod: &Pod, now: i64) -> String {
+    pod.metadata
+        .creation_timestamp
+        .as_ref()
+        .map(|t| age::format_secs(age::secs_since(now, t)))
+        .unwrap_or_else(|| "<unknown>".into())
+}
+
+/// `key=value` pairs, comma-separated, sorted by key (`BTreeMap` iteration
+/// order). `<none>` if the pod has no labels.
+fn pod_labels(pod: &Pod) -> String {
+    match &pod.metadata.labels {
+        Some(labels) if !labels.is_empty() => labels
+            .iter()
+            .map(|(k, v)| format!("{k}={v}"))
+            .collect::<Vec<_>>()
+            .join(","),
+        _ => "<none>".into(),
+    }
+}
+
 /// Build the `pods` table: one row per container that has a status, keyed
 /// `"<pod_index>.<container_index>"`. Pure so it can be unit-tested.
 ///
@@ -119,7 +143,8 @@ pub(crate) fn pod_is_unhealthy(pod: &Pod) -> bool {
 /// convention `resolve` already gives a container-less selector) so a stuck
 /// `Pending` pod is visible instead of silently dropped.
 pub(crate) fn pods_table(pods: &[Pod], filter: PodsFilter) -> Output {
-    let mut rows: Vec<[String; 5]> = Vec::new();
+    let now = age::now_secs();
+    let mut rows: Vec<[String; 7]> = Vec::new();
     for (pi, pod) in pods.iter().enumerate() {
         let name = pod.metadata.name.clone().unwrap_or_default();
         match filter {
@@ -140,6 +165,8 @@ pub(crate) fn pods_table(pods: &[Pod], filter: PodsFilter) -> Output {
             .as_ref()
             .and_then(|s| s.node_name.clone())
             .unwrap_or_default();
+        let age = pod_age(pod, now);
+        let labels = pod_labels(pod);
         let statuses = pod
             .status
             .as_ref()
@@ -153,6 +180,8 @@ pub(crate) fn pods_table(pods: &[Pod], filter: PodsFilter) -> Output {
                         cs.name.clone(),
                         container_state::derive(cs).label(),
                         node.clone(),
+                        age.clone(),
+                        labels.clone(),
                     ]);
                 }
             }
@@ -162,12 +191,23 @@ pub(crate) fn pods_table(pods: &[Pod], filter: PodsFilter) -> Output {
                     .as_ref()
                     .and_then(|s| s.phase.clone())
                     .unwrap_or_else(|| "Unknown".into());
-                rows.push([pi.to_string(), name.clone(), "<none>".into(), phase, node]);
+                rows.push([
+                    pi.to_string(),
+                    name.clone(),
+                    "<none>".into(),
+                    phase,
+                    node,
+                    age,
+                    labels,
+                ]);
             }
             _ => {}
         }
     }
-    Output::table(["N°", "Pod", "Container", "State", "Node"], rows)
+    Output::table(
+        ["N°", "Pod", "Container", "State", "Node", "Age", "Labels"],
+        rows,
+    )
 }
 
 /// `pods [filter | --unhealthy]` — list pods/containers in the namespace,
@@ -226,10 +266,12 @@ impl Command for PodDelete {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeMap;
+
     use k8s_openapi::api::core::v1::{
         ContainerState, ContainerStateRunning, ContainerStatus, PodSpec, PodStatus,
     };
-    use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
+    use k8s_openapi::apimachinery::pkg::apis::meta::v1::{ObjectMeta, Time};
 
     fn cs(name: &str, ready: bool) -> ContainerStatus {
         ContainerStatus {
@@ -276,11 +318,63 @@ mod tests {
         let Output::Table { headers, rows } = pods_table(&pods, PodsFilter::All) else {
             panic!("expected table");
         };
-        assert_eq!(headers, ["N°", "Pod", "Container", "State", "Node"]);
+        assert_eq!(
+            headers,
+            ["N°", "Pod", "Container", "State", "Node", "Age", "Labels"]
+        );
         assert_eq!(rows.len(), 3);
-        assert_eq!(rows[0], ["0.0", "web-0", "app", "Running", "node-a"]);
-        assert_eq!(rows[1], ["0.1", "web-0", "proxy", "Not Ready", "node-a"]);
-        assert_eq!(rows[2], ["1.0", "job-1", "run", "Running", "node-b"]);
+        assert_eq!(
+            rows[0],
+            [
+                "0.0",
+                "web-0",
+                "app",
+                "Running",
+                "node-a",
+                "<unknown>",
+                "<none>"
+            ]
+        );
+        assert_eq!(
+            rows[1],
+            [
+                "0.1",
+                "web-0",
+                "proxy",
+                "Not Ready",
+                "node-a",
+                "<unknown>",
+                "<none>"
+            ]
+        );
+        assert_eq!(
+            rows[2],
+            [
+                "1.0",
+                "job-1",
+                "run",
+                "Running",
+                "node-b",
+                "<unknown>",
+                "<none>"
+            ]
+        );
+    }
+
+    #[test]
+    fn table_reports_age_and_labels_when_present() {
+        let mut labels = BTreeMap::new();
+        labels.insert("app".to_string(), "web".to_string());
+        labels.insert("version".to_string(), "v2".to_string());
+        let mut p = pod("web-0", "node-a", Some(vec![cs("app", true)]));
+        p.metadata.creation_timestamp = Some(Time(k8s_openapi::jiff::Timestamp::now()));
+        p.metadata.labels = Some(labels);
+
+        let Output::Table { rows, .. } = pods_table(&[p], PodsFilter::All) else {
+            panic!("expected table");
+        };
+        assert_eq!(rows[0][5], "0s");
+        assert_eq!(rows[0][6], "app=web,version=v2");
     }
 
     #[test]
@@ -321,7 +415,18 @@ mod tests {
         // Only the matching pod is shown, but its index (0) is the position
         // in the *unfiltered* list, so `exec`/`logs`/`delete 0.0` still
         // resolve to the right pod.
-        assert_eq!(rows, vec![["0.0", "web-0", "app", "Running", "node-a"]]);
+        assert_eq!(
+            rows,
+            vec![[
+                "0.0",
+                "web-0",
+                "app",
+                "Running",
+                "node-a",
+                "<unknown>",
+                "<none>"
+            ]]
+        );
     }
 
     #[test]
@@ -359,7 +464,18 @@ mod tests {
         let Output::Table { rows, .. } = pods_table(&pods, PodsFilter::Unhealthy) else {
             panic!("expected table");
         };
-        assert_eq!(rows, vec![["1.0", "web-1", "app", "Not Ready", "node-a"]]);
+        assert_eq!(
+            rows,
+            vec![[
+                "1.0",
+                "web-1",
+                "app",
+                "Not Ready",
+                "node-a",
+                "<unknown>",
+                "<none>"
+            ]]
+        );
     }
 
     #[test]
@@ -369,7 +485,18 @@ mod tests {
             panic!("expected table");
         };
         // No container index — same convention as a container-less `resolve` selector.
-        assert_eq!(rows, vec![["0", "pending-0", "<none>", "Unknown", ""]]);
+        assert_eq!(
+            rows,
+            vec![[
+                "0",
+                "pending-0",
+                "<none>",
+                "Unknown",
+                "",
+                "<unknown>",
+                "<none>"
+            ]]
+        );
     }
 
     #[test]
