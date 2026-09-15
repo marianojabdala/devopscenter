@@ -5,8 +5,10 @@
 //! parses quantities via [`crate::domain::quantity`] (O4 fix).
 
 mod deploy;
+mod flagger;
 mod hpa;
 mod ingress;
+mod istio;
 mod node_describe;
 mod nodes;
 mod pod_resources;
@@ -15,8 +17,12 @@ mod statefulset;
 mod usage;
 
 pub use deploy::DeployView;
+pub use flagger::CanaryView;
 pub use hpa::HpaView;
 pub use ingress::IngressView;
+pub use istio::{
+    IstioDestinationRulesView, IstioGatewaysView, IstioPeerAuthView, IstioVirtualServicesView,
+};
 pub use node_describe::NodeDescribe;
 pub use nodes::NodesView;
 pub use pod_resources::PodResourcesView;
