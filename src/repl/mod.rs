@@ -28,8 +28,9 @@ use crate::commands::{
     search::PodSearch,
     summary::NamespaceSummary,
     views::{
-        DeployView, HpaView, IngressView, NodeDescribe, NodesView, PodResourcesView, PvcView,
-        StatefulsetView, UsageView,
+        CanaryView, DeployView, HpaView, IngressView, IstioDestinationRulesView, IstioGatewaysView,
+        IstioPeerAuthView, IstioVirtualServicesView, NodeDescribe, NodesView, PodResourcesView,
+        PvcView, StatefulsetView, UsageView,
     },
     Command, Output,
 };
@@ -416,6 +417,11 @@ async fn views_menu(sess: &mut Session, cluster: &ClusterClient) -> Result<()> {
         Box::new(IngressView),
         Box::new(NodesView),
         Box::new(NodeDescribe),
+        Box::new(IstioVirtualServicesView),
+        Box::new(IstioDestinationRulesView),
+        Box::new(IstioGatewaysView),
+        Box::new(IstioPeerAuthView),
+        Box::new(CanaryView),
     ];
     let label = format!("({}):views", cluster.context());
     let toolbar: Vec<&str> = verbs(&cmds);
