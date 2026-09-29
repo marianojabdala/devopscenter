@@ -21,6 +21,7 @@ use crate::commands::{
     describe::PodDescribe,
     events::NamespaceEvents,
     exec::PodExec,
+    labels::PodLabels,
     logs::PodLogs,
     namespaces::{namespace_names, NamespaceCreate, NamespaceDelete, NamespacesList},
     pods::{PodDelete, PodsList},
@@ -320,6 +321,9 @@ async fn namespace_ops_menu(
         Box::new(PodLogs {
             namespace: ns.clone(),
         }),
+        Box::new(PodLabels {
+            namespace: ns.clone(),
+        }),
         Box::new(PodExec {
             namespace: ns.clone(),
         }),
@@ -341,7 +345,7 @@ async fn namespace_ops_menu(
     let prompt = LevelPrompt::with_toolbar(
         label,
         &[
-            "pods", "logs", "exec", "delete", "describe", "events", "rollout", "summary",
+            "pods", "logs", "labels", "exec", "delete", "describe", "events", "rollout", "summary",
         ],
     );
     let mut words: Vec<&str> = verbs(&cmds);

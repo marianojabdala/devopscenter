@@ -85,6 +85,11 @@ Legend: `⇥` = word-completion active, `⌃C` = Ctrl-C, `⌃D` = Ctrl-D / EOF.
 - Streams `read_namespaced_pod_log(..., _preload_content=False)` line by line to stdout, decoded UTF-8.
 - `⌃C` during stream → prints `Breaking logs` and returns to prompt (does not exit level). `ApiException`/other exceptions are logged and swallowed.
 - **Rust divergence:** `logs <selector> -p`/`--previous` shows the log of the container's previous (already-terminated) instance — the single most useful thing for a crash-looping pod, since the *current* instance's log is often empty. No Python equivalent.
+- **Rust divergence:** a non-numeric selector (anything that isn't `<pod_index>` or `<pod_index>.<container_index>`) is treated as a case-insensitive name substring (same rule as `pods <filter>`), and fetches logs from **every** matching pod's **every** container concurrently, each line prefixed `pod/container: `. `logs <selector> --filter TERM` then keeps only output lines containing `TERM` (case-insensitive), applied after prefixing — works for both the single-pod and multi-pod forms. No Python equivalent.
+
+### L4 `labels` — new, no Python equivalent
+- Usage: `labels <pod_index>.<container_index>` (container part ignored) or `labels <name-substring>`. Missing arg → `Error you should select the number of the pod to show labels for. Eg labels 0`.
+- The `pods` table joins a pod's labels into one comma-separated cell, which is hard to scan past a couple of keys. `labels` instead renders one row per key/value pair: `Key`/`Value` columns for a single (numeric-selector) pod, or `Pod`/`Key`/`Value` for every pod matching a name substring — handy for spotting a mismatched label across a deployment's replicas. A pod with no labels gets a single `<none>` row. Same selector resolution as `logs` (`pods::is_index_selector` / `pods::filter_by_name`).
 
 ### L4 `exec` (`exec.py`)
 - Usage: `exec <pod_index>.<container_index> <cmd...>`.
