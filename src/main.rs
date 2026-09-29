@@ -18,6 +18,7 @@ use tracing_subscriber::EnvFilter;
 use commands::{
     describe::PodDescribe,
     events::NamespaceEvents,
+    labels::PodLabels,
     logs::PodLogs,
     namespaces::{NamespaceCreate, NamespaceDelete, NamespacesList},
     pods::PodsList,
@@ -75,17 +76,31 @@ enum SubCmd {
         #[arg(long, short)]
         unhealthy: bool,
     },
-    /// Print a pod container's log.
+    /// Print a pod container's log, or every matching pod's log.
     Logs {
         #[arg(long, short)]
         context: String,
         #[arg(long, short)]
         namespace: String,
-        /// `<pod_index>.<container_index>` (container part optional).
+        /// `<pod_index>.<container_index>` (container part optional), or a
+        /// name substring matching one or more pods.
         selector: String,
         /// Show the log of the previous (already terminated) container instance.
         #[arg(long, short = 'p')]
         previous: bool,
+        /// Only keep output lines containing this substring (case-insensitive).
+        #[arg(long)]
+        filter: Option<String>,
+    },
+    /// Show a pod's labels as a Key/Value table, or every matching pod's.
+    Labels {
+        #[arg(long, short)]
+        context: String,
+        #[arg(long, short)]
+        namespace: String,
+        /// `<pod_index>.<container_index>` (container part ignored), or a
+        /// name substring matching one or more pods.
+        selector: String,
     },
     /// Describe a pod (like `kubectl describe pod`).
     Describe {
@@ -235,13 +250,27 @@ async fn run_once(registry: &ClusterRegistry, sub: SubCmd) -> Result<()> {
             namespace,
             selector,
             previous,
+            filter,
         } => {
             let mut args = vec!["logs".into(), selector];
             if previous {
                 args.push("--previous".into());
             }
+            if let Some(term) = filter {
+                args.push("--filter".into());
+                args.push(term);
+            }
             (context, Box::new(PodLogs { namespace }), args)
         }
+        SubCmd::Labels {
+            context,
+            namespace,
+            selector,
+        } => (
+            context,
+            Box::new(PodLabels { namespace }),
+            vec!["labels".into(), selector],
+        ),
         SubCmd::Describe {
             context,
             namespace,

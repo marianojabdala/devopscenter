@@ -7,6 +7,7 @@
 pub mod describe;
 pub mod events;
 pub mod exec;
+pub mod labels;
 pub mod logs;
 pub mod namespaces;
 pub mod pods;

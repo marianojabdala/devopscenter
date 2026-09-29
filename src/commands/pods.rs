@@ -47,7 +47,29 @@ pub(crate) fn resolve<'a>(pods: &'a [Pod], selector: &str) -> Result<(&'a Pod, O
     Ok((pod, container))
 }
 
-fn container_names(pod: &Pod) -> Vec<String> {
+/// `true` if `selector` is `<pod_index>` or `<pod_index>.<container_index>`
+/// (i.e. resolvable via [`resolve`]) rather than a pod-name substring.
+pub(crate) fn is_index_selector(selector: &str) -> bool {
+    let (pod_part, _) = selector.split_once('.').unwrap_or((selector, ""));
+    pod_part.parse::<usize>().is_ok()
+}
+
+/// Pods whose name contains `name_filter` (case-insensitive) — the same rule
+/// [`PodsFilter::Name`] uses for the `pods` table, reused by any command that
+/// needs to act on every pod of a deployment/statefulset at once.
+pub(crate) fn filter_by_name<'a>(pods: &'a [Pod], name_filter: &str) -> Vec<&'a Pod> {
+    let needle = name_filter.to_lowercase();
+    pods.iter()
+        .filter(|p| {
+            p.metadata
+                .name
+                .as_deref()
+                .is_some_and(|n| n.to_lowercase().contains(&needle))
+        })
+        .collect()
+}
+
+pub(crate) fn container_names(pod: &Pod) -> Vec<String> {
     pod.status
         .as_ref()
         .and_then(|s| s.container_statuses.as_ref())
