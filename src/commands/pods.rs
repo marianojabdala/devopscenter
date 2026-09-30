@@ -141,19 +141,6 @@ fn pod_age(pod: &Pod, now: i64) -> String {
         .unwrap_or_else(|| "<unknown>".into())
 }
 
-/// `key=value` pairs, comma-separated, sorted by key (`BTreeMap` iteration
-/// order). `<none>` if the pod has no labels.
-fn pod_labels(pod: &Pod) -> String {
-    match &pod.metadata.labels {
-        Some(labels) if !labels.is_empty() => labels
-            .iter()
-            .map(|(k, v)| format!("{k}={v}"))
-            .collect::<Vec<_>>()
-            .join(","),
-        _ => "<none>".into(),
-    }
-}
-
 /// Build the `pods` table: one row per container that has a status, keyed
 /// `"<pod_index>.<container_index>"`. Pure so it can be unit-tested.
 ///
@@ -188,7 +175,6 @@ pub(crate) fn pods_table(pods: &[Pod], filter: PodsFilter) -> Output {
             .and_then(|s| s.node_name.clone())
             .unwrap_or_default();
         let age = pod_age(pod, now);
-        let labels = pod_labels(pod);
         let statuses = pod
             .status
             .as_ref()
@@ -203,7 +189,7 @@ pub(crate) fn pods_table(pods: &[Pod], filter: PodsFilter) -> Output {
                         container_state::derive(cs).label(),
                         node.clone(),
                         age.clone(),
-                        labels.clone(),
+                        cs.restart_count.to_string(),
                     ]);
                 }
             }
@@ -220,14 +206,14 @@ pub(crate) fn pods_table(pods: &[Pod], filter: PodsFilter) -> Output {
                     phase,
                     node,
                     age,
-                    labels,
+                    "-".into(),
                 ]);
             }
             _ => {}
         }
     }
     Output::table(
-        ["N°", "Pod", "Container", "State", "Node", "Age", "Labels"],
+        ["N°", "Pod", "Container", "State", "Node", "Age", "Restarts"],
         rows,
     )
 }
@@ -288,7 +274,6 @@ impl Command for PodDelete {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::BTreeMap;
 
     use k8s_openapi::api::core::v1::{
         ContainerState, ContainerStateRunning, ContainerStatus, PodSpec, PodStatus,
@@ -296,12 +281,16 @@ mod tests {
     use k8s_openapi::apimachinery::pkg::apis::meta::v1::{ObjectMeta, Time};
 
     fn cs(name: &str, ready: bool) -> ContainerStatus {
+        cs_with_restarts(name, ready, 0)
+    }
+
+    fn cs_with_restarts(name: &str, ready: bool, restart_count: i32) -> ContainerStatus {
         ContainerStatus {
             name: name.into(),
             ready,
             image: "i".into(),
             image_id: String::new(),
-            restart_count: 0,
+            restart_count,
             state: Some(ContainerState {
                 running: Some(ContainerStateRunning::default()),
                 ..Default::default()
@@ -342,20 +331,12 @@ mod tests {
         };
         assert_eq!(
             headers,
-            ["N°", "Pod", "Container", "State", "Node", "Age", "Labels"]
+            ["N°", "Pod", "Container", "State", "Node", "Age", "Restarts"]
         );
         assert_eq!(rows.len(), 3);
         assert_eq!(
             rows[0],
-            [
-                "0.0",
-                "web-0",
-                "app",
-                "Running",
-                "node-a",
-                "<unknown>",
-                "<none>"
-            ]
+            ["0.0", "web-0", "app", "Running", "node-a", "<unknown>", "0"]
         );
         assert_eq!(
             rows[1],
@@ -366,37 +347,41 @@ mod tests {
                 "Not Ready",
                 "node-a",
                 "<unknown>",
-                "<none>"
+                "0"
             ]
         );
         assert_eq!(
             rows[2],
-            [
-                "1.0",
-                "job-1",
-                "run",
-                "Running",
-                "node-b",
-                "<unknown>",
-                "<none>"
-            ]
+            ["1.0", "job-1", "run", "Running", "node-b", "<unknown>", "0"]
         );
     }
 
     #[test]
-    fn table_reports_age_and_labels_when_present() {
-        let mut labels = BTreeMap::new();
-        labels.insert("app".to_string(), "web".to_string());
-        labels.insert("version".to_string(), "v2".to_string());
+    fn table_reports_age_when_present() {
         let mut p = pod("web-0", "node-a", Some(vec![cs("app", true)]));
         p.metadata.creation_timestamp = Some(Time(k8s_openapi::jiff::Timestamp::now()));
-        p.metadata.labels = Some(labels);
 
         let Output::Table { rows, .. } = pods_table(&[p], PodsFilter::All) else {
             panic!("expected table");
         };
         assert_eq!(rows[0][5], "0s");
-        assert_eq!(rows[0][6], "app=web,version=v2");
+    }
+
+    #[test]
+    fn table_reports_each_container_restart_count() {
+        let pods = vec![pod(
+            "web-0",
+            "node-a",
+            Some(vec![
+                cs_with_restarts("app", true, 3),
+                cs_with_restarts("proxy", true, 0),
+            ]),
+        )];
+        let Output::Table { rows, .. } = pods_table(&pods, PodsFilter::All) else {
+            panic!("expected table");
+        };
+        assert_eq!(rows[0][6], "3");
+        assert_eq!(rows[1][6], "0");
     }
 
     #[test]
@@ -439,15 +424,7 @@ mod tests {
         // resolve to the right pod.
         assert_eq!(
             rows,
-            vec![[
-                "0.0",
-                "web-0",
-                "app",
-                "Running",
-                "node-a",
-                "<unknown>",
-                "<none>"
-            ]]
+            vec![["0.0", "web-0", "app", "Running", "node-a", "<unknown>", "0"]]
         );
     }
 
@@ -495,7 +472,7 @@ mod tests {
                 "Not Ready",
                 "node-a",
                 "<unknown>",
-                "<none>"
+                "0"
             ]]
         );
     }
@@ -509,15 +486,7 @@ mod tests {
         // No container index — same convention as a container-less `resolve` selector.
         assert_eq!(
             rows,
-            vec![[
-                "0",
-                "pending-0",
-                "<none>",
-                "Unknown",
-                "",
-                "<unknown>",
-                "<none>"
-            ]]
+            vec![["0", "pending-0", "<none>", "Unknown", "", "<unknown>", "-"]]
         );
     }
 
