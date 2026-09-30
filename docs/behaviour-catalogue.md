@@ -79,6 +79,7 @@ Legend: `⇥` = word-completion active, `⌃C` = Ctrl-C, `⌃D` = Ctrl-D / EOF.
 - Pods with no container statuses produce no rows.
 - **Rust divergence:** `pods [filter]` takes an optional trailing substring; pods whose name doesn't contain it (case-insensitive) are hidden from the table. The `N°` index is still computed against the *unfiltered* list, so a filtered row's index still resolves correctly against `logs`/`exec`/`delete`, which always re-list unfiltered. The Python version had no such filter.
 - **Rust divergence:** `pods --unhealthy` (or `-u`) replaces the name filter with a health filter: keeps only pods with a non-`Running`/non-cleanly-`Completed` container, or a `Failed` pod, or a pod with no container statuses yet (still scheduling) — the last case gets a synthetic row with no `.container` index (same convention `resolve` gives a container-less selector), since it has no containers to enumerate.
+- **Rust divergence:** the table also has **`Age`** (pod age since `creationTimestamp`, `<unknown>` if absent) and **`Restarts`** (per-container `restartCount`, `-` for the synthetic no-container-statuses row) columns; per-pod labels moved out to their own [`labels`](#l4-labels--new-no-python-equivalent) command instead of a cramped comma-joined cell. No Python equivalent for any of these.
 
 ### L4 `logs` (`logs.py`)
 - Usage: `logs <pod_index>.<container_index>`. Missing/!`.`-formatted arg → `Error you should select the number of the pod to show the log. Eg logs 0.0`.
