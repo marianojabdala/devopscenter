@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
-# Bumps the crate version, updates Cargo.lock, commits, and creates the
-# matching git tag. Does NOT push — review the commit/tag, then push both
-# yourself (pushing the tag is what triggers .github/workflows/release.yml).
+# Prepares a release: creates a `release/vX.Y.Z` branch off the latest
+# `origin/main`, bumps the crate version there, and pushes that branch —
+# never `main` directly, so the bump goes through the same PR review as any
+# other change (branch protection stays intact).
+#
+# Does NOT tag or push a tag. After the release branch's PR is merged, run
+# scripts/tag-release.sh to tag main's new HEAD and trigger the release
+# workflow (.github/workflows/release.yml, which only fires on a tag push).
 #
 # Usage:
 #   scripts/release.sh 1.2.3   # explicit version
@@ -22,9 +27,14 @@ if [ -n "$(git status --porcelain)" ]; then
   exit 1
 fi
 
-current=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+original_branch=$(git rev-parse --abbrev-ref HEAD)
+
+echo "Fetching origin/main..."
+git fetch origin main
+
+current=$(git show origin/main:Cargo.toml | sed -n 's/^version = "\(.*\)"/\1/p' | head -1)
 if [ -z "$current" ]; then
-  echo "error: could not find a 'version = \"...\"' line in Cargo.toml" >&2
+  echo "error: could not find a 'version = \"...\"' line in origin/main's Cargo.toml" >&2
   exit 1
 fi
 
@@ -46,12 +56,25 @@ if [ "$new" = "$current" ]; then
   exit 1
 fi
 
-if git rev-parse "v$new" >/dev/null 2>&1; then
+if git rev-parse "v$new" >/dev/null 2>&1 || git rev-parse "origin/v$new" >/dev/null 2>&1; then
   echo "error: tag v$new already exists" >&2
   exit 1
 fi
 
-echo "Bumping devopscenter: $current -> $new"
+release_branch="release/v$new"
+if git rev-parse "$release_branch" >/dev/null 2>&1 || git rev-parse "origin/$release_branch" >/dev/null 2>&1; then
+  echo "error: branch $release_branch already exists" >&2
+  exit 1
+fi
+
+echo "Bumping devopscenter: $current -> $new (on $release_branch, off origin/main)"
+
+git checkout -b "$release_branch" origin/main
+
+cleanup() {
+  git checkout --quiet "$original_branch"
+}
+trap cleanup EXIT
 
 # Only the first `version = "..."` line — the [package] version, which comes
 # before any dependency table in this file. Don't reuse this against a
@@ -65,14 +88,13 @@ cargo check --quiet
 
 git add Cargo.toml Cargo.lock
 git commit -m "Bump version to $new"
-git tag -a "v$new" -m "v$new"
+git push -u origin "$release_branch"
 
 cat <<EOF
 
-Done. Review before pushing:
-  git show HEAD
-  git show v$new
-
-Push both to publish (pushing the tag triggers the Release workflow):
-  git push && git push origin v$new
+Done. $release_branch pushed (main untouched). Next steps:
+  1. Open a PR: $release_branch -> main, and get it merged.
+  2. Once merged, run: scripts/tag-release.sh $new
+     (this tags main's new HEAD and pushes only the tag, which triggers
+     .github/workflows/release.yml)
 EOF
