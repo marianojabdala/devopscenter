@@ -29,6 +29,7 @@ use commands::{
         DeployView, HpaView, IngressView, NodeDescribe, NodesView, PodResourcesView, PvcView,
         StatefulsetView, UsageView,
     },
+    whois::WhoIs,
     Command,
 };
 use config::ClusterRegistry;
@@ -138,6 +139,12 @@ enum SubCmd {
         #[arg(long, short)]
         context: String,
         term: String,
+    },
+    /// Find the pod and/or service for a given IP, across all namespaces.
+    Whois {
+        #[arg(long, short)]
+        context: String,
+        ip: String,
     },
     /// Run a read-only cluster view.
     View {
@@ -302,6 +309,7 @@ async fn run_once(registry: &ClusterRegistry, sub: SubCmd) -> Result<()> {
         SubCmd::Search { context, term } => {
             (context, Box::new(PodSearch), vec!["search".into(), term])
         }
+        SubCmd::Whois { context, ip } => (context, Box::new(WhoIs), vec!["whois".into(), ip]),
         SubCmd::View {
             context,
             name,

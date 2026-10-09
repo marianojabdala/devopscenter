@@ -1,4 +1,4 @@
-//! L4 `exec <pod>.<container> <cmd...>` (`docs/behaviour-catalogue.md` L4).
+//! L4 `exec <pod>.<container> <cmd...>`.
 //!
 //! Non-interactive, matching the Python version: the command is wrapped in
 //! `/bin/sh -c`, stdin is closed, combined stdout+stderr is returned.

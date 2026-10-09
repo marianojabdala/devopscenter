@@ -1,5 +1,4 @@
-//! L4 `logs <pod>.<container>|<name-substring> [--filter TERM] [-p|--previous]`
-//! (`docs/behaviour-catalogue.md` L4).
+//! L4 `logs <pod>.<container>|<name-substring> [--filter TERM] [-p|--previous]`.
 //!
 //! A numeric selector (`0.0`, `0`) behaves as before: one pod/container. Any
 //! other selector is a case-insensitive substring match against pod names

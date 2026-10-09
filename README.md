@@ -8,9 +8,8 @@ context, walk into a namespace, look at pods / logs / views, without retyping
 [pwncat](https://github.com/calebstewart/pwncat).
 
 > **Status:** rewritten from Python to Rust. The original Python implementation
-> has been removed; see [`migration.md`](migration.md) and
-> [`docs/behaviour-catalogue.md`](docs/behaviour-catalogue.md) for the history
-> and rationale.
+> has been removed; see [`migration.md`](migration.md) for the history and
+> rationale.
 
 ## Install (Rust)
 

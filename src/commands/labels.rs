@@ -1,4 +1,4 @@
-//! L4 `labels <pod>.<container>|<name-substring>` (`docs/behaviour-catalogue.md` L4).
+//! L4 `labels <pod>.<container>|<name-substring>`.
 //!
 //! The `pods` table crams every pod's labels into one comma-joined cell,
 //! which is hard to scan once a pod has more than a couple. `labels` instead
