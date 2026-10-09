@@ -1,41 +1,54 @@
-//! Presentation layer. Turns [`crate::commands::Output`] into terminal text or
-//! JSON. Nothing else in the crate prints command results.
+//! Presentation layer. Turns [`crate::commands::Output`] into terminal text,
+//! JSON, or a Slack-friendly plain-ASCII table. Nothing else in the crate
+//! prints command results.
 
-use std::sync::OnceLock;
+use std::sync::Mutex;
 
 use clap::ValueEnum;
-use comfy_table::{presets::UTF8_FULL, ContentArrangement, Table};
+use comfy_table::{
+    presets::{ASCII_FULL, UTF8_FULL},
+    ContentArrangement, Table,
+};
 use owo_colors::OwoColorize;
 
 use crate::commands::Output;
 
-/// How command results are printed. Set once at startup from `--output`.
+/// How command results are printed. Set from `--output` at startup, and
+/// changeable at runtime in the REPL via the `output <table|json|slack>`
+/// command (every level).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]
 pub enum OutputFormat {
     #[default]
     Table,
     Json,
+    /// Same layout as `Table`, but with plain ASCII (`+`/`-`/`|`) borders
+    /// instead of Unicode box-drawing characters, which often render broken
+    /// when pasted into Slack (even inside a code block).
+    Slack,
 }
 
-static FORMAT: OnceLock<OutputFormat> = OnceLock::new();
+static FORMAT: Mutex<OutputFormat> = Mutex::new(OutputFormat::Table);
 
 pub fn set_format(format: OutputFormat) {
-    let _ = FORMAT.set(format);
+    if let Ok(mut guard) = FORMAT.lock() {
+        *guard = format;
+    }
 }
 
 fn format() -> OutputFormat {
-    FORMAT.get().copied().unwrap_or_default()
+    FORMAT.lock().map(|g| *g).unwrap_or_default()
 }
 
 /// Render a command's output to stdout in the configured format.
 pub fn render(output: &Output) {
     match format() {
-        OutputFormat::Table => render_table(output),
+        OutputFormat::Table => render_table(output, UTF8_FULL),
+        OutputFormat::Slack => render_table(output, ASCII_FULL),
         OutputFormat::Json => render_json(output),
     }
 }
 
-fn render_table(output: &Output) {
+fn render_table(output: &Output, preset: &str) {
     match output {
         Output::Empty => {}
         Output::Text(msg) => println!("{msg}"),
@@ -46,7 +59,7 @@ fn render_table(output: &Output) {
             }
             let mut table = Table::new();
             table
-                .load_preset(UTF8_FULL)
+                .load_preset(preset)
                 .set_content_arrangement(ContentArrangement::Dynamic)
                 .set_header(headers.iter().map(|h| h.as_str()));
             for row in rows {
@@ -96,9 +109,14 @@ pub fn render_help(title: &str, entries: &[(&str, &str)]) {
         );
         return;
     }
+    let preset = if format() == OutputFormat::Slack {
+        ASCII_FULL
+    } else {
+        UTF8_FULL
+    };
     let mut table = Table::new();
     table
-        .load_preset(UTF8_FULL)
+        .load_preset(preset)
         .set_content_arrangement(ContentArrangement::Dynamic)
         .set_header([title, ""]);
     for (verb, desc) in entries {

@@ -118,6 +118,41 @@ fn is_help(verb: &str) -> bool {
     verb == "help" || verb == "h"
 }
 
+/// `output <table|json|slack>` — switches the render format for the rest of
+/// the session (available at every level, like `help`/`exit`). `true` if
+/// `verb` was `output` (handled either way — success or a usage error).
+fn handle_output_command(verb: &str, fmt_arg: Option<&str>) -> bool {
+    if verb != "output" {
+        return false;
+    }
+    match fmt_arg {
+        Some("table") => {
+            view::set_format(view::OutputFormat::Table);
+            view::note("Output format: table");
+        }
+        Some("json") => {
+            view::set_format(view::OutputFormat::Json);
+            view::note("Output format: json");
+        }
+        Some("slack") => {
+            view::set_format(view::OutputFormat::Slack);
+            view::note("Output format: slack (plain ASCII borders, paste into a code block)");
+        }
+        _ => view::error("usage: output <table|json|slack>"),
+    }
+    true
+}
+
+/// Same as [`handle_output_command`], but for a level whose whole input line
+/// is a query/IP (`search`/`whois`) rather than `shlex`-tokenized verbs.
+fn try_handle_output_line(line: &str) -> bool {
+    let args = tokens(line);
+    let Some(verb) = args.first().map(String::as_str) else {
+        return false;
+    };
+    handle_output_command(verb, args.get(1).map(String::as_str))
+}
+
 /// Run `args` against the first matching command. `false` if no command owns
 /// the verb (caller prints its level's "not found" message).
 async fn dispatch(cmds: &[Box<dyn Command>], cluster: &ClusterClient, args: &[String]) -> bool {
@@ -148,10 +183,10 @@ fn verbs(cmds: &[Box<dyn Command>]) -> Vec<&'static str> {
 pub async fn run(registry: ClusterRegistry) -> Result<()> {
     let mut sess = Session::new();
     view::note("Welcome to Devops Center !");
-    let prompt = LevelPrompt::with_toolbar("devops_center", &["kube", "help", "exit"]);
+    let prompt = LevelPrompt::with_toolbar("devops_center", &["kube", "output", "help", "exit"]);
 
     loop {
-        match sess.read(&prompt, &["kube", "help", "exit"]) {
+        match sess.read(&prompt, &["kube", "output", "help", "exit"]) {
             Line::Text(line) => {
                 let args = tokens(&line);
                 let Some(verb) = args.first().map(String::as_str) else {
@@ -162,6 +197,9 @@ pub async fn run(registry: ClusterRegistry) -> Result<()> {
                 }
                 if is_help(verb) {
                     view::render_help("Commands", &[("kube", "Interact with the cluster")]);
+                    continue;
+                }
+                if handle_output_command(verb, args.get(1).map(String::as_str)) {
                     continue;
                 }
                 if verb == "kube" {
@@ -184,7 +222,7 @@ async fn context_picker(sess: &mut Session, registry: &ClusterRegistry) -> Resul
     show_contexts(&names);
     let prompt = LevelPrompt::new("kube");
     let mut words: Vec<&str> = names.iter().map(String::as_str).collect();
-    words.extend(["help", "exit"]);
+    words.extend(["output", "help", "exit"]);
 
     loop {
         match sess.read(&prompt, &words) {
@@ -198,6 +236,9 @@ async fn context_picker(sess: &mut Session, registry: &ClusterRegistry) -> Resul
                 }
                 if is_help(choice) {
                     show_contexts(&names);
+                    continue;
+                }
+                if try_handle_output_line(choice) {
                     continue;
                 }
                 match registry.get(choice) {
@@ -223,7 +264,7 @@ fn show_contexts(names: &[String]) {
 async fn context_menu(sess: &mut Session, cluster: &ClusterClient) -> Result<()> {
     let label = format!("({}):context", cluster.context());
     let prompt = LevelPrompt::with_toolbar(label, &["ns", "search", "whois", "views"]);
-    let words = ["ns", "search", "whois", "views", "help", "exit"];
+    let words = ["ns", "search", "whois", "views", "output", "help", "exit"];
 
     loop {
         match sess.read(&prompt, &words) {
@@ -245,6 +286,9 @@ async fn context_menu(sess: &mut Session, cluster: &ClusterClient) -> Result<()>
                             ("views", "Shows distinct views"),
                         ],
                     );
+                    continue;
+                }
+                if handle_output_command(verb, args.get(1).map(String::as_str)) {
                     continue;
                 }
                 match verb {
@@ -277,7 +321,7 @@ async fn namespaces_menu(sess: &mut Session, cluster: &ClusterClient) -> Result<
 
     loop {
         let mut words: Vec<&str> = verbs(&cmds);
-        words.extend(["help", "exit"]);
+        words.extend(["output", "help", "exit"]);
         words.extend(ns_names.iter().map(String::as_str));
 
         match sess.read(&prompt, &words) {
@@ -291,6 +335,9 @@ async fn namespaces_menu(sess: &mut Session, cluster: &ClusterClient) -> Result<
                 }
                 if is_help(verb) {
                     view::render_help("Commands", &help_entries(&cmds));
+                    continue;
+                }
+                if handle_output_command(verb, args.get(1).map(String::as_str)) {
                     continue;
                 }
                 if dispatch(&cmds, cluster, &args).await {
@@ -352,7 +399,7 @@ async fn namespace_ops_menu(
         ],
     );
     let mut words: Vec<&str> = verbs(&cmds);
-    words.extend(["help", "exit"]);
+    words.extend(["output", "help", "exit"]);
 
     loop {
         match sess.read(&prompt, &words) {
@@ -366,6 +413,9 @@ async fn namespace_ops_menu(
                 }
                 if is_help(verb) {
                     view::render_help("Commands", &help_entries(&cmds));
+                    continue;
+                }
+                if handle_output_command(verb, args.get(1).map(String::as_str)) {
                     continue;
                 }
                 if !dispatch(&cmds, cluster, &args).await {
@@ -386,7 +436,7 @@ async fn search_menu(sess: &mut Session, cluster: &ClusterClient) -> Result<()> 
     let prompt = LevelPrompt::new(label);
 
     loop {
-        match sess.read(&prompt, &["help", "exit"]) {
+        match sess.read(&prompt, &["output", "help", "exit"]) {
             Line::Text(line) => {
                 let query = line.trim();
                 if query.is_empty() {
@@ -397,6 +447,9 @@ async fn search_menu(sess: &mut Session, cluster: &ClusterClient) -> Result<()> 
                 }
                 if is_help(query) {
                     view::note("You have to add the microservice to search");
+                    continue;
+                }
+                if try_handle_output_line(query) {
                     continue;
                 }
                 let args = vec!["search".to_string(), query.to_string()];
@@ -419,7 +472,7 @@ async fn whois_menu(sess: &mut Session, cluster: &ClusterClient) -> Result<()> {
     let prompt = LevelPrompt::new(label);
 
     loop {
-        match sess.read(&prompt, &["help", "exit"]) {
+        match sess.read(&prompt, &["output", "help", "exit"]) {
             Line::Text(line) => {
                 let query = line.trim();
                 if query.is_empty() {
@@ -430,6 +483,9 @@ async fn whois_menu(sess: &mut Session, cluster: &ClusterClient) -> Result<()> {
                 }
                 if is_help(query) {
                     view::note("You have to add the IP to look up");
+                    continue;
+                }
+                if try_handle_output_line(query) {
                     continue;
                 }
                 let args = vec!["whois".to_string(), query.to_string()];
@@ -467,7 +523,7 @@ async fn views_menu(sess: &mut Session, cluster: &ClusterClient) -> Result<()> {
     let toolbar: Vec<&str> = verbs(&cmds);
     let prompt = LevelPrompt::with_toolbar(label, &toolbar);
     let mut words: Vec<&str> = verbs(&cmds);
-    words.extend(["help", "exit"]);
+    words.extend(["output", "help", "exit"]);
 
     loop {
         match sess.read(&prompt, &words) {
@@ -481,6 +537,9 @@ async fn views_menu(sess: &mut Session, cluster: &ClusterClient) -> Result<()> {
                 }
                 if is_help(verb) {
                     view::render_help("Views", &help_entries(&cmds));
+                    continue;
+                }
+                if handle_output_command(verb, args.get(1).map(String::as_str)) {
                     continue;
                 }
                 if !dispatch(&cmds, cluster, &args).await {
@@ -511,5 +570,27 @@ mod tests {
         assert!(is_help("help"));
         assert!(is_help("h"));
         assert!(!is_help("help-me"));
+    }
+
+    #[test]
+    fn handle_output_command_ignores_other_verbs() {
+        assert!(!handle_output_command("pods", Some("slack")));
+    }
+
+    #[test]
+    fn handle_output_command_recognises_every_format_and_rejects_garbage() {
+        assert!(handle_output_command("output", Some("table")));
+        assert!(handle_output_command("output", Some("json")));
+        assert!(handle_output_command("output", Some("slack")));
+        // Still "handled" (it's the `output` verb), just with a usage error.
+        assert!(handle_output_command("output", Some("yaml")));
+        assert!(handle_output_command("output", None));
+    }
+
+    #[test]
+    fn try_handle_output_line_parses_the_whole_line() {
+        assert!(try_handle_output_line("output slack"));
+        assert!(!try_handle_output_line("my-service"));
+        assert!(!try_handle_output_line(""));
     }
 }

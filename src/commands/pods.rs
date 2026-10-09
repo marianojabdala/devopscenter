@@ -131,6 +131,14 @@ pub(crate) fn pod_is_unhealthy(pod: &Pod) -> bool {
     }
 }
 
+/// `<none>` if the pod hasn't been assigned an IP yet (still scheduling).
+fn pod_ip(pod: &Pod) -> String {
+    pod.status
+        .as_ref()
+        .and_then(|s| s.pod_ip.clone())
+        .unwrap_or_else(|| "<none>".into())
+}
+
 /// `<unknown>` if the pod has no `creationTimestamp` yet (shouldn't happen for
 /// a pod the API server has returned, but the field is optional in the type).
 fn pod_age(pod: &Pod, now: i64) -> String {
@@ -153,7 +161,7 @@ fn pod_age(pod: &Pod, now: i64) -> String {
 /// `Pending` pod is visible instead of silently dropped.
 pub(crate) fn pods_table(pods: &[Pod], filter: PodsFilter) -> Output {
     let now = age::now_secs();
-    let mut rows: Vec<[String; 7]> = Vec::new();
+    let mut rows: Vec<[String; 8]> = Vec::new();
     for (pi, pod) in pods.iter().enumerate() {
         let name = pod.metadata.name.clone().unwrap_or_default();
         match filter {
@@ -174,6 +182,7 @@ pub(crate) fn pods_table(pods: &[Pod], filter: PodsFilter) -> Output {
             .as_ref()
             .and_then(|s| s.node_name.clone())
             .unwrap_or_default();
+        let ip = pod_ip(pod);
         let age = pod_age(pod, now);
         let statuses = pod
             .status
@@ -188,6 +197,7 @@ pub(crate) fn pods_table(pods: &[Pod], filter: PodsFilter) -> Output {
                         cs.name.clone(),
                         container_state::derive(cs).label(),
                         node.clone(),
+                        ip.clone(),
                         age.clone(),
                         cs.restart_count.to_string(),
                     ]);
@@ -205,6 +215,7 @@ pub(crate) fn pods_table(pods: &[Pod], filter: PodsFilter) -> Output {
                     "<none>".into(),
                     phase,
                     node,
+                    ip,
                     age,
                     "-".into(),
                 ]);
@@ -213,7 +224,16 @@ pub(crate) fn pods_table(pods: &[Pod], filter: PodsFilter) -> Output {
         }
     }
     Output::table(
-        ["N°", "Pod", "Container", "State", "Node", "Age", "Restarts"],
+        [
+            "N°",
+            "Pod",
+            "Container",
+            "State",
+            "Node",
+            "IP",
+            "Age",
+            "Restarts",
+        ],
         rows,
     )
 }
@@ -331,12 +351,30 @@ mod tests {
         };
         assert_eq!(
             headers,
-            ["N°", "Pod", "Container", "State", "Node", "Age", "Restarts"]
+            [
+                "N°",
+                "Pod",
+                "Container",
+                "State",
+                "Node",
+                "IP",
+                "Age",
+                "Restarts"
+            ]
         );
         assert_eq!(rows.len(), 3);
         assert_eq!(
             rows[0],
-            ["0.0", "web-0", "app", "Running", "node-a", "<unknown>", "0"]
+            [
+                "0.0",
+                "web-0",
+                "app",
+                "Running",
+                "node-a",
+                "<none>",
+                "<unknown>",
+                "0"
+            ]
         );
         assert_eq!(
             rows[1],
@@ -346,14 +384,35 @@ mod tests {
                 "proxy",
                 "Not Ready",
                 "node-a",
+                "<none>",
                 "<unknown>",
                 "0"
             ]
         );
         assert_eq!(
             rows[2],
-            ["1.0", "job-1", "run", "Running", "node-b", "<unknown>", "0"]
+            [
+                "1.0",
+                "job-1",
+                "run",
+                "Running",
+                "node-b",
+                "<none>",
+                "<unknown>",
+                "0"
+            ]
         );
+    }
+
+    #[test]
+    fn table_reports_ip_when_present() {
+        let mut p = pod("web-0", "node-a", Some(vec![cs("app", true)]));
+        p.status.as_mut().unwrap().pod_ip = Some("10.1.2.3".into());
+
+        let Output::Table { rows, .. } = pods_table(&[p], PodsFilter::All) else {
+            panic!("expected table");
+        };
+        assert_eq!(rows[0][5], "10.1.2.3");
     }
 
     #[test]
@@ -364,7 +423,7 @@ mod tests {
         let Output::Table { rows, .. } = pods_table(&[p], PodsFilter::All) else {
             panic!("expected table");
         };
-        assert_eq!(rows[0][5], "0s");
+        assert_eq!(rows[0][6], "0s");
     }
 
     #[test]
@@ -380,8 +439,8 @@ mod tests {
         let Output::Table { rows, .. } = pods_table(&pods, PodsFilter::All) else {
             panic!("expected table");
         };
-        assert_eq!(rows[0][6], "3");
-        assert_eq!(rows[1][6], "0");
+        assert_eq!(rows[0][7], "3");
+        assert_eq!(rows[1][7], "0");
     }
 
     #[test]
@@ -424,7 +483,16 @@ mod tests {
         // resolve to the right pod.
         assert_eq!(
             rows,
-            vec![["0.0", "web-0", "app", "Running", "node-a", "<unknown>", "0"]]
+            vec![[
+                "0.0",
+                "web-0",
+                "app",
+                "Running",
+                "node-a",
+                "<none>",
+                "<unknown>",
+                "0"
+            ]]
         );
     }
 
@@ -471,6 +539,7 @@ mod tests {
                 "app",
                 "Not Ready",
                 "node-a",
+                "<none>",
                 "<unknown>",
                 "0"
             ]]
@@ -486,7 +555,16 @@ mod tests {
         // No container index — same convention as a container-less `resolve` selector.
         assert_eq!(
             rows,
-            vec![["0", "pending-0", "<none>", "Unknown", "", "<unknown>", "-"]]
+            vec![[
+                "0",
+                "pending-0",
+                "<none>",
+                "Unknown",
+                "",
+                "<none>",
+                "<unknown>",
+                "-"
+            ]]
         );
     }
 
