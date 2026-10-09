@@ -50,6 +50,7 @@ Legend: `⇥` = word-completion active, `⌃C` = Ctrl-C, `⌃D` = Ctrl-D / EOF.
   - `search — Look for a microservice into the namespaces`
   - `views — Shows distinct views`
 - Dispatch: `ns` → L3; `search` → L3-search; `views` → L3-views. Unknown verb → `Command not found!!!` (via `NotFound`).
+- **Rust divergence:** added `whois` → L3-whois, `Find the pod/service for a given IP`. No Python equivalent.
 
 ## L3 — namespaces (`NamespacesManager`, `namespaces_manager.py`)
 
@@ -124,6 +125,14 @@ Legend: `⇥` = word-completion active, `⌃C` = Ctrl-C, `⌃D` = Ctrl-D / EOF.
 - For a non-empty query: iterate every namespace (`list_namespace`), list its pods, collect namespaces where any `pod_name` **contains** the query as a substring. Shows a transient `rich` progress bar.
 - Result: `Namespace: {<set>}` (a Python `set` repr) or `Not found`.
 - ⚠ O9 sequential. **Rust spec:** same set semantics, scans run concurrently.
+
+## L3-whois — new, no Python equivalent
+
+- Prompt: `(<context>)whois:>$`. Whole trimmed line is the IP (same UX as L3-search).
+- For a non-empty IP: concurrently list every namespace's pods and services (same pattern as `search`).
+  - If a pod's `status.podIP` matches, add a `Pod` row (`Name`, `Namespace`, `node=<node>`), then — in that same namespace — look for any `Service` whose `spec.selector` is a non-empty subset of the pod's labels, adding a `Service` row per match (`routes to pod <name>`) so a pod IP resolves to both the pod and whatever fronts it.
+  - Independently, any `Service` whose `spec.clusterIP`/`spec.clusterIPs`/`spec.externalIPs`/`status.loadBalancer.ingress[].ip` matches gets a `Service` row (`type=<ClusterIP|NodePort|LoadBalancer|...>`).
+  - Output table `Kind, Name, Namespace, Detail`; no match → `No pod or service found with IP <ip>`.
 
 ## L3-views (`CustomViews`, `custom_views.py` + `views/*`)
 

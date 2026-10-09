@@ -33,6 +33,7 @@ use crate::commands::{
         IstioPeerAuthView, IstioVirtualServicesView, NodeDescribe, NodesView, PodResourcesView,
         PvcView, StatefulsetView, UsageView,
     },
+    whois::WhoIs,
     Command, Output,
 };
 use crate::config::{self, ClusterClient, ClusterRegistry};
@@ -221,8 +222,8 @@ fn show_contexts(names: &[String]) {
 /// L2 — a chosen context.
 async fn context_menu(sess: &mut Session, cluster: &ClusterClient) -> Result<()> {
     let label = format!("({}):context", cluster.context());
-    let prompt = LevelPrompt::with_toolbar(label, &["ns", "search", "views"]);
-    let words = ["ns", "search", "views", "help", "exit"];
+    let prompt = LevelPrompt::with_toolbar(label, &["ns", "search", "whois", "views"]);
+    let words = ["ns", "search", "whois", "views", "help", "exit"];
 
     loop {
         match sess.read(&prompt, &words) {
@@ -240,6 +241,7 @@ async fn context_menu(sess: &mut Session, cluster: &ClusterClient) -> Result<()>
                         &[
                             ("ns", "Interact with namespaces"),
                             ("search", "Look for a microservice into the namespaces"),
+                            ("whois", "Find the pod/service for a given IP"),
                             ("views", "Shows distinct views"),
                         ],
                     );
@@ -248,6 +250,7 @@ async fn context_menu(sess: &mut Session, cluster: &ClusterClient) -> Result<()>
                 match verb {
                     "ns" => namespaces_menu(sess, cluster).await?,
                     "search" => search_menu(sess, cluster).await?,
+                    "whois" => whois_menu(sess, cluster).await?,
                     "views" => views_menu(sess, cluster).await?,
                     _ => view::error("Command not found!!!"),
                 }
@@ -398,6 +401,39 @@ async fn search_menu(sess: &mut Session, cluster: &ClusterClient) -> Result<()> 
                 }
                 let args = vec!["search".to_string(), query.to_string()];
                 match search.run(cluster, &args).await {
+                    Ok(output) => view::render(&output),
+                    Err(err) => view::error(&format!("{err:#}")),
+                }
+            }
+            Line::Interrupted => continue,
+            Line::Eof => break,
+        }
+    }
+    Ok(())
+}
+
+/// L3-whois — every input line is an IP to look up.
+async fn whois_menu(sess: &mut Session, cluster: &ClusterClient) -> Result<()> {
+    let whois = WhoIs;
+    let label = format!("({})whois", cluster.context());
+    let prompt = LevelPrompt::new(label);
+
+    loop {
+        match sess.read(&prompt, &["help", "exit"]) {
+            Line::Text(line) => {
+                let query = line.trim();
+                if query.is_empty() {
+                    continue;
+                }
+                if is_exit(query) {
+                    break;
+                }
+                if is_help(query) {
+                    view::note("You have to add the IP to look up");
+                    continue;
+                }
+                let args = vec!["whois".to_string(), query.to_string()];
+                match whois.run(cluster, &args).await {
                     Ok(output) => view::render(&output),
                     Err(err) => view::error(&format!("{err:#}")),
                 }

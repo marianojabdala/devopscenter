@@ -15,6 +15,7 @@ pub mod rollout;
 pub mod search;
 pub mod summary;
 pub mod views;
+pub mod whois;
 
 use anyhow::Result;
 
