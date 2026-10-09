@@ -68,9 +68,6 @@ src/
   into commands; constructors do no I/O. This structurally prevents the multi-cluster binding bug
   the Python version had (documented as O1 in `migration.md`).
 - Kubernetes calls return `anyhow::Result`; errors carry context rather than being swallowed.
-- `docs/behaviour-catalogue.md` records the observable contract (prompts, columns, messages)
-  level by level; deliberate divergences from the original Python behaviour are noted there and
-  in `migration.md` §2.3 / §8b.
 
 ## CI / release
 

@@ -1,4 +1,4 @@
-//! L4 `pods` and `delete` (`docs/behaviour-catalogue.md` L4).
+//! L4 `pods` and `delete`.
 
 use anyhow::{anyhow, Context as _, Result};
 use k8s_openapi::api::core::v1::Pod;

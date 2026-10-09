@@ -1,6 +1,5 @@
 //! `ns` verbs: `list`, `create <name>`, `delete <name>`. Entering a namespace
-//! (`ns <name>`) is handled by the REPL, which switches to the L4 command set
-//! (`docs/behaviour-catalogue.md` L3/L4).
+//! (`ns <name>`) is handled by the REPL, which switches to the L4 command set.
 
 use anyhow::{Context as _, Result};
 use k8s_openapi::api::core::v1::Namespace;

@@ -1,6 +1,5 @@
-//! Nested interactive prompts. Mirrors the Python level ladder
-//! (`docs/behaviour-catalogue.md`): L0 top → L1 context picker → L2 context →
-//! {L3 namespaces → L4 namespace ops | L3 search | L3 views}.
+//! Nested interactive prompts: L0 top → L1 context picker → L2 context →
+//! {L3 namespaces → L4 namespace ops | L3 search | L3 whois | L3 views}.
 //!
 //! The REPL knows nothing about Kubernetes types — it only drives
 //! [`crate::commands`] and hands their [`Output`] to [`crate::view`].

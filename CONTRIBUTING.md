@@ -57,7 +57,6 @@ annotated `vX.Y.Z` tag — it does **not** push. Review with `git show HEAD` /
 | `src/domain/` | typed helpers: `quantity` (CPU/memory parsing), `container_state` |
 | `src/repl/` | nested prompt loops, completion, history — no Kubernetes types |
 | `src/view/` | `Output` → table or JSON |
-| `docs/behaviour-catalogue.md` | the observable contract, level by level |
 | `tests/cli.rs` | non-interactive CLI integration tests |
 
 ## Conventions
@@ -69,9 +68,6 @@ annotated `vX.Y.Z` tag — it does **not** push. Review with `git show HEAD` /
   field, add a typed helper instead.
 - Add a unit test with each new `Command` (mock the data, test the pure parts —
   see `src/commands/pods.rs`).
-- User-facing wording stays close to the Python original where
-  `docs/behaviour-catalogue.md` records it; deliberate divergences are noted
-  there and in `migration.md` §2.3 / §8b.
 
 ## `k8s-openapi` version policy
 

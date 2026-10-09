@@ -1,5 +1,4 @@
-//! `whois <ip>` — what is this IP: a pod, a service, or both
-//! (`docs/behaviour-catalogue.md` L2).
+//! `whois <ip>` — what is this IP: a pod, a service, or both.
 //!
 //! Cluster-wide, like `search` (`docs/commands/search.rs`): the per-namespace
 //! pod/service listing runs concurrently, and the observable contract is the

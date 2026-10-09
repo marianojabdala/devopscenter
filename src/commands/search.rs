@@ -1,5 +1,4 @@
-//! `search <substring>` — namespaces containing a pod whose name matches
-//! (`docs/behaviour-catalogue.md` L3-search).
+//! `search <substring>` — namespaces containing a pod whose name matches.
 //!
 //! The per-namespace pod listing runs concurrently (migration.md O9); the
 //! observable contract is unchanged: the set of matching namespace names.

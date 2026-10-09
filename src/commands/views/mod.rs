@@ -1,4 +1,4 @@
-//! Read-only cluster reports (`docs/behaviour-catalogue.md` L3-views).
+//! Read-only cluster reports.
 //!
 //! Every view takes an optional `args[1]` substring filter on the resource
 //! name. `ingress` uses `networking.k8s.io/v1` (migration.md O5 fix); `usage`
