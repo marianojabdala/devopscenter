@@ -32,8 +32,8 @@ with `sha256` checksums.
 
 `Cargo.toml`'s `version` (what `devopscenter --version` prints, via clap's
 `version` derive) and the git tag are two separate things — nothing keeps
-them in sync automatically. Use `scripts/release.sh` (or `make release`)
-instead of tagging by hand:
+them in sync automatically. The version bump goes through a normal PR, same
+as any other change to `main`; nothing is ever pushed to `main` directly.
 
 ```bash
 make release BUMP=patch      # 1.2.3 -> 1.2.4
@@ -42,10 +42,16 @@ make release BUMP=major      # 1.2.3 -> 2.0.0
 make release VERSION=1.2.3   # explicit version
 ```
 
-This bumps `Cargo.toml`, refreshes `Cargo.lock`, and creates a local commit +
-annotated `vX.Y.Z` tag — it does **not** push. Review with `git show HEAD` /
-`git show vX.Y.Z`, then `git push && git push origin vX.Y.Z` to publish
-(pushing the tag is what triggers `release.yml`).
+This creates a `release/vX.Y.Z` branch off the latest `origin/main`, bumps
+`Cargo.toml`, refreshes `Cargo.lock`, commits, and pushes **that branch**
+(your local branch is left as it was). Open a PR for it and merge as usual.
+
+Once merged, tag `main`'s new HEAD and push *only* the tag — that's what
+triggers `release.yml`:
+
+```bash
+make tag-release VERSION=1.2.3
+```
 
 ## Project layout
 
