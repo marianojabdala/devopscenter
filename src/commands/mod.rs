@@ -5,6 +5,7 @@
 //! `--output json` mode (migration.md §3.2, §7).
 
 pub mod describe;
+pub mod endpoints;
 pub mod events;
 pub mod exec;
 pub mod labels;
@@ -15,6 +16,7 @@ pub mod rollout;
 pub mod search;
 pub mod summary;
 pub mod views;
+pub mod warnings;
 pub mod whois;
 
 use anyhow::Result;

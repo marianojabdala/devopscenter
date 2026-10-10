@@ -17,6 +17,7 @@ use tracing_subscriber::EnvFilter;
 
 use commands::{
     describe::PodDescribe,
+    endpoints::ServiceEndpoints,
     events::NamespaceEvents,
     labels::PodLabels,
     logs::PodLogs,
@@ -29,6 +30,7 @@ use commands::{
         DeployView, HpaView, IngressView, NodeDescribe, NodesView, PodResourcesView, PvcView,
         StatefulsetView, UsageView,
     },
+    warnings::Warnings,
     whois::WhoIs,
     Command,
 };
@@ -76,6 +78,9 @@ enum SubCmd {
         /// Only show pods that aren't healthy (crash looping, pending, failed, ...).
         #[arg(long, short)]
         unhealthy: bool,
+        /// Only show pods with at least one restarted container.
+        #[arg(long, short)]
+        restarted: bool,
     },
     /// Print a pod container's log, or every matching pod's log.
     Logs {
@@ -119,6 +124,14 @@ enum SubCmd {
         #[arg(long, short)]
         namespace: String,
     },
+    /// Show a service's backing pods and their ready/not-ready state.
+    Endpoints {
+        #[arg(long, short)]
+        context: String,
+        #[arg(long, short)]
+        namespace: String,
+        service: String,
+    },
     /// Poll a deployment's rollout until it settles (or ~60s pass).
     Rollout {
         #[arg(long, short)]
@@ -145,6 +158,11 @@ enum SubCmd {
         #[arg(long, short)]
         context: String,
         ip: String,
+    },
+    /// Every Warning event across all namespaces, newest first.
+    Warnings {
+        #[arg(long, short)]
+        context: String,
     },
     /// Run a read-only cluster view.
     View {
@@ -243,10 +261,13 @@ async fn run_once(registry: &ClusterRegistry, sub: SubCmd) -> Result<()> {
             namespace,
             filter,
             unhealthy,
+            restarted,
         } => {
             let mut args = vec!["pods".into()];
             if unhealthy {
                 args.push("--unhealthy".into());
+            } else if restarted {
+                args.push("--restarted".into());
             } else {
                 args.extend(filter);
             }
@@ -292,6 +313,15 @@ async fn run_once(registry: &ClusterRegistry, sub: SubCmd) -> Result<()> {
             Box::new(NamespaceEvents { namespace }),
             vec!["events".into()],
         ),
+        SubCmd::Endpoints {
+            context,
+            namespace,
+            service,
+        } => (
+            context,
+            Box::new(ServiceEndpoints { namespace }),
+            vec!["endpoints".into(), service],
+        ),
         SubCmd::Rollout {
             context,
             namespace,
@@ -310,6 +340,7 @@ async fn run_once(registry: &ClusterRegistry, sub: SubCmd) -> Result<()> {
             (context, Box::new(PodSearch), vec!["search".into(), term])
         }
         SubCmd::Whois { context, ip } => (context, Box::new(WhoIs), vec!["whois".into(), ip]),
+        SubCmd::Warnings { context } => (context, Box::new(Warnings), vec!["warnings".into()]),
         SubCmd::View {
             context,
             name,
