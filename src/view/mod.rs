@@ -113,7 +113,14 @@ fn render_table_string(output: &Output, preset: &str) -> String {
 fn render_json_string(output: &Output) -> String {
     let value = match output {
         Output::Empty => serde_json::Value::Null,
-        Output::Text(msg) => serde_json::json!({ "message": msg }),
+        // A single line reads fine as one `message` string, but a multi-line
+        // blob (`describe`, `logs`, `summary`, `describe-node`) collapses
+        // into one opaque, hard-to-read `"a\nb\nc"` value — split it into a
+        // `lines` array instead, so each line stays a readable JSON string.
+        Output::Text(msg) => match msg.split('\n').collect::<Vec<_>>() {
+            lines if lines.len() > 1 => serde_json::json!({ "lines": lines }),
+            _ => serde_json::json!({ "message": msg }),
+        },
         Output::Table { headers, rows } => {
             let objects: Vec<serde_json::Value> = rows
                 .iter()
@@ -194,6 +201,17 @@ mod tests {
             "{\n  \"message\": \"hi\"\n}"
         );
         assert_eq!(render_json_string(&Output::Empty), "null");
+    }
+
+    #[test]
+    fn render_json_string_splits_multiline_text_into_a_lines_array() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let json = render_json_string(&Output::Text("Name:  web-0\nStatus: Running".into()));
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            parsed,
+            serde_json::json!({ "lines": ["Name:  web-0", "Status: Running"] })
+        );
     }
 
     #[test]

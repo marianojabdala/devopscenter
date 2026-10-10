@@ -17,10 +17,14 @@ use reedline::{
 };
 
 use crate::commands::{
+    can_i::CanI,
+    configcheck::ConfigCheck,
     describe::PodDescribe,
     endpoints::ServiceEndpoints,
     events::NamespaceEvents,
     exec::PodExec,
+    imagecheck::ImageCheck,
+    istio_sidecar::IstioSidecarCheck,
     labels::PodLabels,
     logs::PodLogs,
     namespaces::{namespace_names, NamespaceCreate, NamespaceDelete, NamespacesList},
@@ -29,9 +33,10 @@ use crate::commands::{
     search::PodSearch,
     summary::NamespaceSummary,
     views::{
-        CanaryView, DeployView, HpaView, IngressView, IstioDestinationRulesView, IstioGatewaysView,
-        IstioPeerAuthView, IstioVirtualServicesView, NodeDescribe, NodesView, PodResourcesView,
-        PvcView, StatefulsetView, UsageView,
+        CanaryView, CronJobView, DaemonSetView, DeployView, HpaView, IngressView, IstioAuthzView,
+        IstioDestinationRulesView, IstioGatewaysView, IstioPeerAuthView, IstioVirtualServicesView,
+        JobView, NodeDescribe, NodesView, PdbView, PodResourcesView, PvcView, StatefulsetView,
+        TaintsView, UsageView,
     },
     warnings::Warnings,
     whois::WhoIs,
@@ -437,6 +442,18 @@ async fn namespace_ops_menu(
         Box::new(ServiceEndpoints {
             namespace: ns.clone(),
         }),
+        Box::new(ConfigCheck {
+            namespace: ns.clone(),
+        }),
+        Box::new(ImageCheck {
+            namespace: ns.clone(),
+        }),
+        Box::new(CanI {
+            namespace: ns.clone(),
+        }),
+        Box::new(IstioSidecarCheck {
+            namespace: ns.clone(),
+        }),
         Box::new(RolloutStatus {
             namespace: ns.clone(),
         }),
@@ -454,6 +471,10 @@ async fn namespace_ops_menu(
             "describe",
             "events",
             "endpoints",
+            "configcheck",
+            "imagecheck",
+            "can-i",
+            "istio-sidecar",
             "rollout",
             "summary",
         ],
@@ -575,17 +596,23 @@ async fn views_menu(sess: &mut Session, cluster: &ClusterClient) -> Result<()> {
     let cmds: Vec<Box<dyn Command>> = vec![
         Box::new(DeployView),
         Box::new(StatefulsetView),
+        Box::new(DaemonSetView),
+        Box::new(JobView),
+        Box::new(CronJobView),
         Box::new(HpaView),
+        Box::new(PdbView),
         Box::new(PvcView),
         Box::new(PodResourcesView),
         Box::new(UsageView),
         Box::new(IngressView),
         Box::new(NodesView),
         Box::new(NodeDescribe),
+        Box::new(TaintsView),
         Box::new(IstioVirtualServicesView),
         Box::new(IstioDestinationRulesView),
         Box::new(IstioGatewaysView),
         Box::new(IstioPeerAuthView),
+        Box::new(IstioAuthzView),
         Box::new(CanaryView),
     ];
     let label = format!("({}):views", cluster.context());
