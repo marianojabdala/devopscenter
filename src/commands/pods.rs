@@ -88,15 +88,19 @@ pub(crate) enum PodsFilter<'a> {
     /// container statuses yet (still `Pending`/scheduling) — the "what's
     /// actually broken in this namespace" view.
     Unhealthy,
+    /// Any container with a non-zero `restartCount`.
+    Restarted,
 }
 
 impl<'a> PodsFilter<'a> {
     /// `args[1]` decides the filter: `--unhealthy`/`-u` selects
-    /// [`PodsFilter::Unhealthy`], anything else is a name substring.
+    /// [`PodsFilter::Unhealthy`], `--restarted`/`-r` selects
+    /// [`PodsFilter::Restarted`], anything else is a name substring.
     pub(crate) fn from_args(args: &'a [String]) -> Self {
         match args.get(1).map(String::as_str) {
             None => PodsFilter::All,
             Some("--unhealthy" | "-u") => PodsFilter::Unhealthy,
+            Some("--restarted" | "-r") => PodsFilter::Restarted,
             Some(name) => PodsFilter::Name(name),
         }
     }
@@ -131,6 +135,45 @@ pub(crate) fn pod_is_unhealthy(pod: &Pod) -> bool {
     }
 }
 
+/// `true` if any container has restarted at least once.
+pub(crate) fn pod_was_restarted(pod: &Pod) -> bool {
+    pod.status
+        .as_ref()
+        .and_then(|s| s.container_statuses.as_ref())
+        .is_some_and(|statuses| statuses.iter().any(|cs| cs.restart_count > 0))
+}
+
+/// The tag portion of a container image reference, e.g. `nginx:1.25` → `Some("1.25")`.
+/// `None` for a bare image (`nginx`, implicit `latest`) or a digest-pinned one
+/// (`nginx@sha256:...`) — a raw digest isn't a useful "version" to show.
+/// Handles a registry host with a port (`host:5000/app:1.2.3`) by only
+/// looking for a tag in the final `/`-separated path segment.
+fn image_tag(image: &str) -> Option<&str> {
+    let without_digest = image.split('@').next().unwrap_or(image);
+    let last_segment = without_digest.rsplit('/').next().unwrap_or(without_digest);
+    last_segment.split_once(':').map(|(_, tag)| tag)
+}
+
+/// A `version`/`tag`/`app.kubernetes.io/version` label on the pod, if any —
+/// the fallback when the image itself carries no usable tag.
+fn pod_label_version(pod: &Pod) -> Option<&str> {
+    let labels = pod.metadata.labels.as_ref()?;
+    labels
+        .get("version")
+        .or_else(|| labels.get("tag"))
+        .or_else(|| labels.get("app.kubernetes.io/version"))
+        .map(String::as_str)
+}
+
+/// `<none>` if neither the container's image nor the pod's labels carry a
+/// usable version/tag.
+fn container_version(image: &str, pod: &Pod) -> String {
+    image_tag(image)
+        .or_else(|| pod_label_version(pod))
+        .unwrap_or("<none>")
+        .to_string()
+}
+
 /// `<none>` if the pod hasn't been assigned an IP yet (still scheduling).
 fn pod_ip(pod: &Pod) -> String {
     pod.status
@@ -161,7 +204,7 @@ fn pod_age(pod: &Pod, now: i64) -> String {
 /// `Pending` pod is visible instead of silently dropped.
 pub(crate) fn pods_table(pods: &[Pod], filter: PodsFilter) -> Output {
     let now = age::now_secs();
-    let mut rows: Vec<[String; 8]> = Vec::new();
+    let mut rows: Vec<[String; 9]> = Vec::new();
     for (pi, pod) in pods.iter().enumerate() {
         let name = pod.metadata.name.clone().unwrap_or_default();
         match filter {
@@ -173,6 +216,11 @@ pub(crate) fn pods_table(pods: &[Pod], filter: PodsFilter) -> Output {
             }
             PodsFilter::Unhealthy => {
                 if !pod_is_unhealthy(pod) {
+                    continue;
+                }
+            }
+            PodsFilter::Restarted => {
+                if !pod_was_restarted(pod) {
                     continue;
                 }
             }
@@ -195,6 +243,7 @@ pub(crate) fn pods_table(pods: &[Pod], filter: PodsFilter) -> Output {
                         format!("{pi}.{ci}"),
                         name.clone(),
                         cs.name.clone(),
+                        container_version(&cs.image, pod),
                         container_state::derive(cs).label(),
                         node.clone(),
                         ip.clone(),
@@ -209,10 +258,12 @@ pub(crate) fn pods_table(pods: &[Pod], filter: PodsFilter) -> Output {
                     .as_ref()
                     .and_then(|s| s.phase.clone())
                     .unwrap_or_else(|| "Unknown".into());
+                let version = pod_label_version(pod).unwrap_or("<none>").to_string();
                 rows.push([
                     pi.to_string(),
                     name.clone(),
                     "<none>".into(),
+                    version,
                     phase,
                     node,
                     ip,
@@ -228,6 +279,7 @@ pub(crate) fn pods_table(pods: &[Pod], filter: PodsFilter) -> Output {
             "N°",
             "Pod",
             "Container",
+            "Version",
             "State",
             "Node",
             "IP",
@@ -250,7 +302,7 @@ impl Command for PodsList {
         "pods"
     }
     fn help(&self) -> &'static str {
-        "Shows the pods (pods <name-substring>, or pods --unhealthy)"
+        "Shows the pods (pods <name-substring>, pods --unhealthy, or pods --restarted)"
     }
     async fn run(&self, ctx: &ClusterClient, args: &[String]) -> Result<Output> {
         let pods = list_pods(ctx, &self.namespace).await?;
@@ -294,6 +346,7 @@ impl Command for PodDelete {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeMap;
 
     use k8s_openapi::api::core::v1::{
         ContainerState, ContainerStateRunning, ContainerStatus, PodSpec, PodStatus,
@@ -355,6 +408,7 @@ mod tests {
                 "N°",
                 "Pod",
                 "Container",
+                "Version",
                 "State",
                 "Node",
                 "IP",
@@ -369,6 +423,7 @@ mod tests {
                 "0.0",
                 "web-0",
                 "app",
+                "<none>",
                 "Running",
                 "node-a",
                 "<none>",
@@ -382,6 +437,7 @@ mod tests {
                 "0.1",
                 "web-0",
                 "proxy",
+                "<none>",
                 "Not Ready",
                 "node-a",
                 "<none>",
@@ -395,6 +451,7 @@ mod tests {
                 "1.0",
                 "job-1",
                 "run",
+                "<none>",
                 "Running",
                 "node-b",
                 "<none>",
@@ -412,7 +469,7 @@ mod tests {
         let Output::Table { rows, .. } = pods_table(&[p], PodsFilter::All) else {
             panic!("expected table");
         };
-        assert_eq!(rows[0][5], "10.1.2.3");
+        assert_eq!(rows[0][6], "10.1.2.3");
     }
 
     #[test]
@@ -423,7 +480,7 @@ mod tests {
         let Output::Table { rows, .. } = pods_table(&[p], PodsFilter::All) else {
             panic!("expected table");
         };
-        assert_eq!(rows[0][6], "0s");
+        assert_eq!(rows[0][7], "0s");
     }
 
     #[test]
@@ -439,8 +496,82 @@ mod tests {
         let Output::Table { rows, .. } = pods_table(&pods, PodsFilter::All) else {
             panic!("expected table");
         };
-        assert_eq!(rows[0][7], "3");
-        assert_eq!(rows[1][7], "0");
+        assert_eq!(rows[0][8], "3");
+        assert_eq!(rows[1][8], "0");
+    }
+
+    #[test]
+    fn table_reports_version_from_image_tag() {
+        let mut p = pod("web-0", "node-a", Some(vec![cs("app", true)]));
+        p.status
+            .as_mut()
+            .unwrap()
+            .container_statuses
+            .as_mut()
+            .unwrap()[0]
+            .image = "nginx:1.25".into();
+
+        let Output::Table { rows, .. } = pods_table(&[p], PodsFilter::All) else {
+            panic!("expected table");
+        };
+        assert_eq!(rows[0][3], "1.25");
+    }
+
+    #[test]
+    fn table_falls_back_to_label_version_when_image_has_no_tag() {
+        let mut p = pod("web-0", "node-a", Some(vec![cs("app", true)]));
+        p.status
+            .as_mut()
+            .unwrap()
+            .container_statuses
+            .as_mut()
+            .unwrap()[0]
+            .image = "nginx@sha256:deadbeef".into();
+        p.metadata.labels = Some(BTreeMap::from([("version".to_string(), "v2".to_string())]));
+
+        let Output::Table { rows, .. } = pods_table(&[p], PodsFilter::All) else {
+            panic!("expected table");
+        };
+        assert_eq!(rows[0][3], "v2");
+    }
+
+    #[test]
+    fn image_tag_handles_registry_host_with_port() {
+        assert_eq!(image_tag("registry.local:5000/app:1.2.3"), Some("1.2.3"));
+    }
+
+    #[test]
+    fn image_tag_is_none_for_bare_image_or_digest_only() {
+        assert_eq!(image_tag("nginx"), None);
+        assert_eq!(image_tag("nginx@sha256:deadbeef"), None);
+        assert_eq!(image_tag("registry.local:5000/app@sha256:deadbeef"), None);
+    }
+
+    #[test]
+    fn image_tag_handles_plain_tag() {
+        assert_eq!(image_tag("nginx:1.25"), Some("1.25"));
+        assert_eq!(image_tag("nginx:latest"), Some("latest"));
+    }
+
+    #[test]
+    fn pod_label_version_prefers_version_over_tag_over_kubernetes_io() {
+        let p = pod_with_labels(BTreeMap::from([
+            ("tag".to_string(), "t".to_string()),
+            ("app.kubernetes.io/version".to_string(), "k".to_string()),
+            ("version".to_string(), "v".to_string()),
+        ]));
+        assert_eq!(pod_label_version(&p), Some("v"));
+    }
+
+    fn pod_with_labels(labels: BTreeMap<String, String>) -> Pod {
+        Pod {
+            metadata: ObjectMeta {
+                labels: Some(labels),
+                ..Default::default()
+            },
+            spec: None,
+            status: None,
+        }
     }
 
     #[test]
@@ -487,6 +618,7 @@ mod tests {
                 "0.0",
                 "web-0",
                 "app",
+                "<none>",
                 "Running",
                 "node-a",
                 "<none>",
@@ -523,6 +655,63 @@ mod tests {
     }
 
     #[test]
+    fn from_args_recognises_the_restarted_flag() {
+        assert_eq!(
+            PodsFilter::from_args(&["pods".into(), "--restarted".into()]),
+            PodsFilter::Restarted
+        );
+        assert_eq!(
+            PodsFilter::from_args(&["pods".into(), "-r".into()]),
+            PodsFilter::Restarted
+        );
+    }
+
+    #[test]
+    fn pod_was_restarted_checks_every_container() {
+        let never_restarted = pod("web-0", "node-a", Some(vec![cs("app", true)]));
+        assert!(!pod_was_restarted(&never_restarted));
+
+        let restarted = pod(
+            "web-1",
+            "node-a",
+            Some(vec![cs("app", true), cs_with_restarts("sidecar", true, 2)]),
+        );
+        assert!(pod_was_restarted(&restarted));
+
+        let no_statuses = pod("pending-0", "", None);
+        assert!(!pod_was_restarted(&no_statuses));
+    }
+
+    #[test]
+    fn restarted_filter_keeps_only_pods_with_a_restarted_container() {
+        let pods = vec![
+            pod("web-0", "node-a", Some(vec![cs("app", true)])), // never restarted
+            pod(
+                "web-1",
+                "node-a",
+                Some(vec![cs_with_restarts("app", true, 5)]),
+            ),
+        ];
+        let Output::Table { rows, .. } = pods_table(&pods, PodsFilter::Restarted) else {
+            panic!("expected table");
+        };
+        assert_eq!(
+            rows,
+            vec![[
+                "1.0",
+                "web-1",
+                "app",
+                "<none>",
+                "Running",
+                "node-a",
+                "<none>",
+                "<unknown>",
+                "5"
+            ]]
+        );
+    }
+
+    #[test]
     fn unhealthy_filter_keeps_only_broken_pods_with_original_index() {
         let pods = vec![
             pod("web-0", "node-a", Some(vec![cs("app", true)])), // healthy
@@ -537,6 +726,7 @@ mod tests {
                 "1.0",
                 "web-1",
                 "app",
+                "<none>",
                 "Not Ready",
                 "node-a",
                 "<none>",
@@ -558,6 +748,7 @@ mod tests {
             vec![[
                 "0",
                 "pending-0",
+                "<none>",
                 "<none>",
                 "Unknown",
                 "",

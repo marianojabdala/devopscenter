@@ -17,9 +17,14 @@ use reedline::{
 };
 
 use crate::commands::{
+    can_i::CanI,
+    configcheck::ConfigCheck,
     describe::PodDescribe,
+    endpoints::ServiceEndpoints,
     events::NamespaceEvents,
     exec::PodExec,
+    imagecheck::ImageCheck,
+    istio_sidecar::IstioSidecarCheck,
     labels::PodLabels,
     logs::PodLogs,
     namespaces::{namespace_names, NamespaceCreate, NamespaceDelete, NamespacesList},
@@ -28,10 +33,12 @@ use crate::commands::{
     search::PodSearch,
     summary::NamespaceSummary,
     views::{
-        CanaryView, DeployView, HpaView, IngressView, IstioDestinationRulesView, IstioGatewaysView,
-        IstioPeerAuthView, IstioVirtualServicesView, NodeDescribe, NodesView, PodResourcesView,
-        PvcView, StatefulsetView, UsageView,
+        CanaryView, CronJobView, DaemonSetView, DeployView, HpaView, IngressView, IstioAuthzView,
+        IstioDestinationRulesView, IstioGatewaysView, IstioPeerAuthView, IstioVirtualServicesView,
+        JobView, NodeDescribe, NodesView, PdbView, PodResourcesView, PvcView, StatefulsetView,
+        TaintsView, UsageView,
     },
+    warnings::Warnings,
     whois::WhoIs,
     Command, Output,
 };
@@ -152,6 +159,33 @@ fn try_handle_output_line(line: &str) -> bool {
     handle_output_command(verb, args.get(1).map(String::as_str))
 }
 
+/// `save <path>` — writes the last command's result (in whatever format
+/// `output` currently has active) to `path`. Available at every level, like
+/// `output`/`help`/`exit`. `true` if `verb` was `save` (handled either way).
+fn handle_save_command(verb: &str, path_arg: Option<&str>) -> bool {
+    if verb != "save" {
+        return false;
+    }
+    match path_arg {
+        Some(path) => match view::save_last(std::path::Path::new(path)) {
+            Ok(()) => view::note(&format!("Saved to {path}")),
+            Err(err) => view::error(&err),
+        },
+        None => view::error("usage: save <path>"),
+    }
+    true
+}
+
+/// Same as [`handle_save_command`], but for a level whose whole input line is
+/// a query/IP (`search`/`whois`) rather than `shlex`-tokenized verbs.
+fn try_handle_save_line(line: &str) -> bool {
+    let args = tokens(line);
+    let Some(verb) = args.first().map(String::as_str) else {
+        return false;
+    };
+    handle_save_command(verb, args.get(1).map(String::as_str))
+}
+
 /// Run `args` against the first matching command. `false` if no command owns
 /// the verb (caller prints its level's "not found" message).
 async fn dispatch(cmds: &[Box<dyn Command>], cluster: &ClusterClient, args: &[String]) -> bool {
@@ -182,10 +216,11 @@ fn verbs(cmds: &[Box<dyn Command>]) -> Vec<&'static str> {
 pub async fn run(registry: ClusterRegistry) -> Result<()> {
     let mut sess = Session::new();
     view::note("Welcome to Devops Center !");
-    let prompt = LevelPrompt::with_toolbar("devops_center", &["kube", "output", "help", "exit"]);
+    let prompt =
+        LevelPrompt::with_toolbar("devops_center", &["kube", "output", "save", "help", "exit"]);
 
     loop {
-        match sess.read(&prompt, &["kube", "output", "help", "exit"]) {
+        match sess.read(&prompt, &["kube", "output", "save", "help", "exit"]) {
             Line::Text(line) => {
                 let args = tokens(&line);
                 let Some(verb) = args.first().map(String::as_str) else {
@@ -199,6 +234,9 @@ pub async fn run(registry: ClusterRegistry) -> Result<()> {
                     continue;
                 }
                 if handle_output_command(verb, args.get(1).map(String::as_str)) {
+                    continue;
+                }
+                if handle_save_command(verb, args.get(1).map(String::as_str)) {
                     continue;
                 }
                 if verb == "kube" {
@@ -221,7 +259,7 @@ async fn context_picker(sess: &mut Session, registry: &ClusterRegistry) -> Resul
     show_contexts(&names);
     let prompt = LevelPrompt::new("kube");
     let mut words: Vec<&str> = names.iter().map(String::as_str).collect();
-    words.extend(["output", "help", "exit"]);
+    words.extend(["output", "save", "help", "exit"]);
 
     loop {
         match sess.read(&prompt, &words) {
@@ -238,6 +276,9 @@ async fn context_picker(sess: &mut Session, registry: &ClusterRegistry) -> Resul
                     continue;
                 }
                 if try_handle_output_line(choice) {
+                    continue;
+                }
+                if try_handle_save_line(choice) {
                     continue;
                 }
                 match registry.get(choice) {
@@ -262,8 +303,10 @@ fn show_contexts(names: &[String]) {
 /// L2 — a chosen context.
 async fn context_menu(sess: &mut Session, cluster: &ClusterClient) -> Result<()> {
     let label = format!("({}):context", cluster.context());
-    let prompt = LevelPrompt::with_toolbar(label, &["ns", "search", "whois", "views"]);
-    let words = ["ns", "search", "whois", "views", "output", "help", "exit"];
+    let prompt = LevelPrompt::with_toolbar(label, &["ns", "search", "whois", "warnings", "views"]);
+    let words = [
+        "ns", "search", "whois", "warnings", "views", "output", "save", "help", "exit",
+    ];
 
     loop {
         match sess.read(&prompt, &words) {
@@ -282,6 +325,7 @@ async fn context_menu(sess: &mut Session, cluster: &ClusterClient) -> Result<()>
                             ("ns", "Interact with namespaces"),
                             ("search", "Look for a microservice into the namespaces"),
                             ("whois", "Find the pod/service for a given IP"),
+                            ("warnings", "Every Warning event across all namespaces"),
                             ("views", "Shows distinct views"),
                         ],
                     );
@@ -290,10 +334,17 @@ async fn context_menu(sess: &mut Session, cluster: &ClusterClient) -> Result<()>
                 if handle_output_command(verb, args.get(1).map(String::as_str)) {
                     continue;
                 }
+                if handle_save_command(verb, args.get(1).map(String::as_str)) {
+                    continue;
+                }
                 match verb {
                     "ns" => namespaces_menu(sess, cluster).await?,
                     "search" => search_menu(sess, cluster).await?,
                     "whois" => whois_menu(sess, cluster).await?,
+                    "warnings" => match Warnings.run(cluster, &args).await {
+                        Ok(output) => view::render(&output),
+                        Err(err) => view::error(&format!("{err:#}")),
+                    },
                     "views" => views_menu(sess, cluster).await?,
                     _ => view::error("Command not found!!!"),
                 }
@@ -320,7 +371,7 @@ async fn namespaces_menu(sess: &mut Session, cluster: &ClusterClient) -> Result<
 
     loop {
         let mut words: Vec<&str> = verbs(&cmds);
-        words.extend(["output", "help", "exit"]);
+        words.extend(["output", "save", "help", "exit"]);
         words.extend(ns_names.iter().map(String::as_str));
 
         match sess.read(&prompt, &words) {
@@ -337,6 +388,9 @@ async fn namespaces_menu(sess: &mut Session, cluster: &ClusterClient) -> Result<
                     continue;
                 }
                 if handle_output_command(verb, args.get(1).map(String::as_str)) {
+                    continue;
+                }
+                if handle_save_command(verb, args.get(1).map(String::as_str)) {
                     continue;
                 }
                 if dispatch(&cmds, cluster, &args).await {
@@ -385,6 +439,21 @@ async fn namespace_ops_menu(
         Box::new(NamespaceEvents {
             namespace: ns.clone(),
         }),
+        Box::new(ServiceEndpoints {
+            namespace: ns.clone(),
+        }),
+        Box::new(ConfigCheck {
+            namespace: ns.clone(),
+        }),
+        Box::new(ImageCheck {
+            namespace: ns.clone(),
+        }),
+        Box::new(CanI {
+            namespace: ns.clone(),
+        }),
+        Box::new(IstioSidecarCheck {
+            namespace: ns.clone(),
+        }),
         Box::new(RolloutStatus {
             namespace: ns.clone(),
         }),
@@ -394,11 +463,24 @@ async fn namespace_ops_menu(
     let prompt = LevelPrompt::with_toolbar(
         label,
         &[
-            "pods", "logs", "labels", "exec", "delete", "describe", "events", "rollout", "summary",
+            "pods",
+            "logs",
+            "labels",
+            "exec",
+            "delete",
+            "describe",
+            "events",
+            "endpoints",
+            "configcheck",
+            "imagecheck",
+            "can-i",
+            "istio-sidecar",
+            "rollout",
+            "summary",
         ],
     );
     let mut words: Vec<&str> = verbs(&cmds);
-    words.extend(["output", "help", "exit"]);
+    words.extend(["output", "save", "help", "exit"]);
 
     loop {
         match sess.read(&prompt, &words) {
@@ -415,6 +497,9 @@ async fn namespace_ops_menu(
                     continue;
                 }
                 if handle_output_command(verb, args.get(1).map(String::as_str)) {
+                    continue;
+                }
+                if handle_save_command(verb, args.get(1).map(String::as_str)) {
                     continue;
                 }
                 if !dispatch(&cmds, cluster, &args).await {
@@ -435,7 +520,7 @@ async fn search_menu(sess: &mut Session, cluster: &ClusterClient) -> Result<()> 
     let prompt = LevelPrompt::new(label);
 
     loop {
-        match sess.read(&prompt, &["output", "help", "exit"]) {
+        match sess.read(&prompt, &["output", "save", "help", "exit"]) {
             Line::Text(line) => {
                 let query = line.trim();
                 if query.is_empty() {
@@ -449,6 +534,9 @@ async fn search_menu(sess: &mut Session, cluster: &ClusterClient) -> Result<()> 
                     continue;
                 }
                 if try_handle_output_line(query) {
+                    continue;
+                }
+                if try_handle_save_line(query) {
                     continue;
                 }
                 let args = vec!["search".to_string(), query.to_string()];
@@ -471,7 +559,7 @@ async fn whois_menu(sess: &mut Session, cluster: &ClusterClient) -> Result<()> {
     let prompt = LevelPrompt::new(label);
 
     loop {
-        match sess.read(&prompt, &["output", "help", "exit"]) {
+        match sess.read(&prompt, &["output", "save", "help", "exit"]) {
             Line::Text(line) => {
                 let query = line.trim();
                 if query.is_empty() {
@@ -485,6 +573,9 @@ async fn whois_menu(sess: &mut Session, cluster: &ClusterClient) -> Result<()> {
                     continue;
                 }
                 if try_handle_output_line(query) {
+                    continue;
+                }
+                if try_handle_save_line(query) {
                     continue;
                 }
                 let args = vec!["whois".to_string(), query.to_string()];
@@ -505,24 +596,30 @@ async fn views_menu(sess: &mut Session, cluster: &ClusterClient) -> Result<()> {
     let cmds: Vec<Box<dyn Command>> = vec![
         Box::new(DeployView),
         Box::new(StatefulsetView),
+        Box::new(DaemonSetView),
+        Box::new(JobView),
+        Box::new(CronJobView),
         Box::new(HpaView),
+        Box::new(PdbView),
         Box::new(PvcView),
         Box::new(PodResourcesView),
         Box::new(UsageView),
         Box::new(IngressView),
         Box::new(NodesView),
         Box::new(NodeDescribe),
+        Box::new(TaintsView),
         Box::new(IstioVirtualServicesView),
         Box::new(IstioDestinationRulesView),
         Box::new(IstioGatewaysView),
         Box::new(IstioPeerAuthView),
+        Box::new(IstioAuthzView),
         Box::new(CanaryView),
     ];
     let label = format!("({}):views", cluster.context());
     let toolbar: Vec<&str> = verbs(&cmds);
     let prompt = LevelPrompt::with_toolbar(label, &toolbar);
     let mut words: Vec<&str> = verbs(&cmds);
-    words.extend(["output", "help", "exit"]);
+    words.extend(["output", "save", "help", "exit"]);
 
     loop {
         match sess.read(&prompt, &words) {
@@ -539,6 +636,9 @@ async fn views_menu(sess: &mut Session, cluster: &ClusterClient) -> Result<()> {
                     continue;
                 }
                 if handle_output_command(verb, args.get(1).map(String::as_str)) {
+                    continue;
+                }
+                if handle_save_command(verb, args.get(1).map(String::as_str)) {
                     continue;
                 }
                 if !dispatch(&cmds, cluster, &args).await {
@@ -591,5 +691,26 @@ mod tests {
         assert!(try_handle_output_line("output slack"));
         assert!(!try_handle_output_line("my-service"));
         assert!(!try_handle_output_line(""));
+    }
+
+    #[test]
+    fn handle_save_command_ignores_other_verbs() {
+        assert!(!handle_save_command("pods", Some("out.json")));
+    }
+
+    #[test]
+    fn handle_save_command_recognises_save_with_or_without_a_path() {
+        // "Handled" either way: with a path it attempts the save (and may
+        // report "nothing to save yet" via view::error — no file is
+        // written), without one it's a usage error. Neither writes to disk.
+        assert!(handle_save_command("save", Some("out.json")));
+        assert!(handle_save_command("save", None));
+    }
+
+    #[test]
+    fn try_handle_save_line_parses_the_whole_line() {
+        assert!(try_handle_save_line("save out.json"));
+        assert!(!try_handle_save_line("my-service"));
+        assert!(!try_handle_save_line(""));
     }
 }

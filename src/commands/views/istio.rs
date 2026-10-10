@@ -218,7 +218,7 @@ pub struct IstioPeerAuthView;
 
 /// `spec.selector.matchLabels`, `k=v` pairs comma-joined; `<mesh-wide>` if
 /// absent (no selector means the policy applies to every workload in scope).
-fn peer_auth_selector(data: &Value) -> String {
+fn selector_summary(data: &Value) -> String {
     data.get("spec")
         .and_then(|s| s.get("selector"))
         .and_then(|s| s.get("matchLabels"))
@@ -244,7 +244,7 @@ fn peer_auth_row(obj: &DynamicObject) -> [String; 4] {
         .and_then(Value::as_str)
         .unwrap_or("<unset>")
         .to_string();
-    let selector = peer_auth_selector(&obj.data);
+    let selector = selector_summary(&obj.data);
     [ns, name, mode, selector]
 }
 
@@ -266,6 +266,46 @@ impl Command for IstioPeerAuthView {
             .collect();
         Ok(Output::table(
             ["Namespace", "Name", "mTLS Mode", "Selector"],
+            rows,
+        ))
+    }
+}
+
+pub struct IstioAuthzView;
+
+/// `spec.action`; Istio defaults to `ALLOW` when the field is absent.
+fn authz_row(obj: &DynamicObject) -> [String; 4] {
+    let ns = obj.metadata.namespace.clone().unwrap_or_default();
+    let name = obj.metadata.name.clone().unwrap_or_default();
+    let action = obj
+        .data
+        .get("spec")
+        .and_then(|s| s.get("action"))
+        .and_then(Value::as_str)
+        .unwrap_or("ALLOW")
+        .to_string();
+    let selector = selector_summary(&obj.data);
+    [ns, name, action, selector]
+}
+
+#[async_trait::async_trait]
+impl Command for IstioAuthzView {
+    fn name(&self) -> &'static str {
+        "istio-authz"
+    }
+    fn help(&self) -> &'static str {
+        "Istio AuthorizationPolicies: action and selector"
+    }
+    async fn run(&self, ctx: &ClusterClient, args: &[String]) -> Result<Output> {
+        let filter = name_filter(args);
+        let objs = list(ctx, "security.istio.io", "v1beta1", "AuthorizationPolicy").await?;
+        let rows: Vec<[String; 4]> = objs
+            .iter()
+            .filter(|o| passes(filter, o.metadata.name.as_deref().unwrap_or_default()))
+            .map(authz_row)
+            .collect();
+        Ok(Output::table(
+            ["Namespace", "Name", "Action", "Selector"],
             rows,
         ))
     }
@@ -363,6 +403,26 @@ mod tests {
         let unset = obj("web", "default", json!({"spec": {}}));
         let row = peer_auth_row(&unset);
         assert_eq!(row[2], "<unset>");
+        assert_eq!(row[3], "<mesh-wide>");
+    }
+
+    #[test]
+    fn authz_row_reports_action_and_selector() {
+        let deny = obj(
+            "web",
+            "deny-all",
+            json!({"spec": {"action": "DENY", "selector": {"matchLabels": {"app": "web"}}}}),
+        );
+        let row = authz_row(&deny);
+        assert_eq!(row[2], "DENY");
+        assert_eq!(row[3], "app=web");
+    }
+
+    #[test]
+    fn authz_row_defaults_action_to_allow_when_absent() {
+        let implicit = obj("web", "default", json!({"spec": {}}));
+        let row = authz_row(&implicit);
+        assert_eq!(row[2], "ALLOW");
         assert_eq!(row[3], "<mesh-wide>");
     }
 }

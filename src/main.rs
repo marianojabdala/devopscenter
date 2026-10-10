@@ -16,8 +16,13 @@ use clap::{Parser, Subcommand};
 use tracing_subscriber::EnvFilter;
 
 use commands::{
+    can_i::CanI,
+    configcheck::ConfigCheck,
     describe::PodDescribe,
+    endpoints::ServiceEndpoints,
     events::NamespaceEvents,
+    imagecheck::ImageCheck,
+    istio_sidecar::IstioSidecarCheck,
     labels::PodLabels,
     logs::PodLogs,
     namespaces::{NamespaceCreate, NamespaceDelete, NamespacesList},
@@ -26,9 +31,10 @@ use commands::{
     search::PodSearch,
     summary::NamespaceSummary,
     views::{
-        DeployView, HpaView, IngressView, NodeDescribe, NodesView, PodResourcesView, PvcView,
-        StatefulsetView, UsageView,
+        CronJobView, DaemonSetView, DeployView, HpaView, IngressView, JobView, NodeDescribe,
+        NodesView, PdbView, PodResourcesView, PvcView, StatefulsetView, TaintsView, UsageView,
     },
+    warnings::Warnings,
     whois::WhoIs,
     Command,
 };
@@ -76,6 +82,9 @@ enum SubCmd {
         /// Only show pods that aren't healthy (crash looping, pending, failed, ...).
         #[arg(long, short)]
         unhealthy: bool,
+        /// Only show pods with at least one restarted container.
+        #[arg(long, short)]
+        restarted: bool,
     },
     /// Print a pod container's log, or every matching pod's log.
     Logs {
@@ -119,6 +128,49 @@ enum SubCmd {
         #[arg(long, short)]
         namespace: String,
     },
+    /// Show a service's backing pods and their ready/not-ready state.
+    Endpoints {
+        #[arg(long, short)]
+        context: String,
+        #[arg(long, short)]
+        namespace: String,
+        service: String,
+    },
+    /// Checks that every ConfigMap/Secret a pod references actually exists.
+    ConfigCheck {
+        #[arg(long, short)]
+        context: String,
+        #[arg(long, short)]
+        namespace: String,
+        /// `<pod_index>` (a `.<container_index>` suffix is accepted but ignored).
+        selector: String,
+    },
+    /// Compares a deployment's desired image against what's actually running.
+    ImageCheck {
+        #[arg(long, short)]
+        context: String,
+        #[arg(long, short)]
+        namespace: String,
+        deployment: String,
+    },
+    /// Checks whether you may <verb> <resource> in a namespace (kubectl auth can-i).
+    CanI {
+        #[arg(long, short)]
+        context: String,
+        #[arg(long, short)]
+        namespace: String,
+        verb: String,
+        resource: String,
+    },
+    /// Checks whether a pod has its Istio sidecar injected, and why/why not.
+    IstioSidecar {
+        #[arg(long, short)]
+        context: String,
+        #[arg(long, short)]
+        namespace: String,
+        /// `<pod_index>` (a `.<container_index>` suffix is accepted but ignored).
+        selector: String,
+    },
     /// Poll a deployment's rollout until it settles (or ~60s pass).
     Rollout {
         #[arg(long, short)]
@@ -146,11 +198,16 @@ enum SubCmd {
         context: String,
         ip: String,
     },
+    /// Every Warning event across all namespaces, newest first.
+    Warnings {
+        #[arg(long, short)]
+        context: String,
+    },
     /// Run a read-only cluster view.
     View {
         #[arg(long, short)]
         context: String,
-        /// deploy | stateful | hpa | pvc | resources | usage | ingress | nodes | describe-node
+        /// deploy | stateful | daemonsets | jobs | cronjobs | hpa | pdb | pvc | resources | usage | ingress | nodes | describe-node | taints
         name: String,
         /// Substring filter on the resource name (or, for describe-node, the node name).
         filter: Option<String>,
@@ -243,10 +300,13 @@ async fn run_once(registry: &ClusterRegistry, sub: SubCmd) -> Result<()> {
             namespace,
             filter,
             unhealthy,
+            restarted,
         } => {
             let mut args = vec!["pods".into()];
             if unhealthy {
                 args.push("--unhealthy".into());
+            } else if restarted {
+                args.push("--restarted".into());
             } else {
                 args.extend(filter);
             }
@@ -292,6 +352,52 @@ async fn run_once(registry: &ClusterRegistry, sub: SubCmd) -> Result<()> {
             Box::new(NamespaceEvents { namespace }),
             vec!["events".into()],
         ),
+        SubCmd::Endpoints {
+            context,
+            namespace,
+            service,
+        } => (
+            context,
+            Box::new(ServiceEndpoints { namespace }),
+            vec!["endpoints".into(), service],
+        ),
+        SubCmd::ConfigCheck {
+            context,
+            namespace,
+            selector,
+        } => (
+            context,
+            Box::new(ConfigCheck { namespace }),
+            vec!["configcheck".into(), selector],
+        ),
+        SubCmd::ImageCheck {
+            context,
+            namespace,
+            deployment,
+        } => (
+            context,
+            Box::new(ImageCheck { namespace }),
+            vec!["imagecheck".into(), deployment],
+        ),
+        SubCmd::CanI {
+            context,
+            namespace,
+            verb,
+            resource,
+        } => (
+            context,
+            Box::new(CanI { namespace }),
+            vec!["can-i".into(), verb, resource],
+        ),
+        SubCmd::IstioSidecar {
+            context,
+            namespace,
+            selector,
+        } => (
+            context,
+            Box::new(IstioSidecarCheck { namespace }),
+            vec!["istio-sidecar".into(), selector],
+        ),
         SubCmd::Rollout {
             context,
             namespace,
@@ -310,6 +416,7 @@ async fn run_once(registry: &ClusterRegistry, sub: SubCmd) -> Result<()> {
             (context, Box::new(PodSearch), vec!["search".into(), term])
         }
         SubCmd::Whois { context, ip } => (context, Box::new(WhoIs), vec!["whois".into(), ip]),
+        SubCmd::Warnings { context } => (context, Box::new(Warnings), vec!["warnings".into()]),
         SubCmd::View {
             context,
             name,
@@ -334,13 +441,18 @@ fn view_by_name(name: &str) -> Option<Box<dyn Command>> {
     Some(match name {
         "deploy" => Box::new(DeployView),
         "stateful" => Box::new(StatefulsetView),
+        "daemonsets" => Box::new(DaemonSetView),
+        "jobs" => Box::new(JobView),
+        "cronjobs" => Box::new(CronJobView),
         "hpa" => Box::new(HpaView),
+        "pdb" => Box::new(PdbView),
         "pvc" => Box::new(PvcView),
         "resources" => Box::new(PodResourcesView),
         "usage" => Box::new(UsageView),
         "ingress" => Box::new(IngressView),
         "nodes" => Box::new(NodesView),
         "describe-node" => Box::new(NodeDescribe),
+        "taints" => Box::new(TaintsView),
         _ => return None,
     })
 }
