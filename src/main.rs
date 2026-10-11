@@ -18,6 +18,7 @@ use tracing_subscriber::EnvFilter;
 use commands::{
     can_i::CanI,
     configcheck::ConfigCheck,
+    configmap::ConfigMapShow,
     describe::PodDescribe,
     endpoints::ServiceEndpoints,
     events::NamespaceEvents,
@@ -29,6 +30,7 @@ use commands::{
     pods::PodsList,
     rollout::RolloutStatus,
     search::PodSearch,
+    secret::SecretShow,
     summary::NamespaceSummary,
     views::{
         CronJobView, DaemonSetView, DeployView, HpaView, IngressView, JobView, NodeDescribe,
@@ -137,6 +139,7 @@ enum SubCmd {
         service: String,
     },
     /// Checks that every ConfigMap/Secret a pod references actually exists.
+    #[command(name = "configcheck")]
     ConfigCheck {
         #[arg(long, short)]
         context: String,
@@ -145,7 +148,25 @@ enum SubCmd {
         /// `<pod_index>` (a `.<container_index>` suffix is accepted but ignored).
         selector: String,
     },
+    /// Shows a ConfigMap's full key/value content.
+    #[command(name = "configmap")]
+    ConfigMap {
+        #[arg(long, short)]
+        context: String,
+        #[arg(long, short)]
+        namespace: String,
+        name: String,
+    },
+    /// Shows a Secret's keys and byte lengths — never the decoded values.
+    Secret {
+        #[arg(long, short)]
+        context: String,
+        #[arg(long, short)]
+        namespace: String,
+        name: String,
+    },
     /// Compares a deployment's desired image against what's actually running.
+    #[command(name = "imagecheck")]
     ImageCheck {
         #[arg(long, short)]
         context: String,
@@ -369,6 +390,24 @@ async fn run_once(registry: &ClusterRegistry, sub: SubCmd) -> Result<()> {
             context,
             Box::new(ConfigCheck { namespace }),
             vec!["configcheck".into(), selector],
+        ),
+        SubCmd::ConfigMap {
+            context,
+            namespace,
+            name,
+        } => (
+            context,
+            Box::new(ConfigMapShow { namespace }),
+            vec!["configmap".into(), name],
+        ),
+        SubCmd::Secret {
+            context,
+            namespace,
+            name,
+        } => (
+            context,
+            Box::new(SecretShow { namespace }),
+            vec!["secret".into(), name],
         ),
         SubCmd::ImageCheck {
             context,

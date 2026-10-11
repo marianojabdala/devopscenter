@@ -6,6 +6,7 @@
 
 pub mod can_i;
 pub mod configcheck;
+pub mod configmap;
 pub mod describe;
 pub mod endpoints;
 pub mod events;
@@ -18,6 +19,7 @@ pub mod namespaces;
 pub mod pods;
 pub mod rollout;
 pub mod search;
+pub mod secret;
 pub mod summary;
 pub mod views;
 pub mod warnings;
