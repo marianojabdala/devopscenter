@@ -19,6 +19,7 @@ use reedline::{
 use crate::commands::{
     can_i::CanI,
     configcheck::ConfigCheck,
+    configmap::ConfigMapShow,
     describe::PodDescribe,
     endpoints::ServiceEndpoints,
     events::NamespaceEvents,
@@ -31,6 +32,7 @@ use crate::commands::{
     pods::{PodDelete, PodsList},
     rollout::RolloutStatus,
     search::PodSearch,
+    secret::SecretShow,
     summary::NamespaceSummary,
     views::{
         CanaryView, CronJobView, DaemonSetView, DeployView, HpaView, IngressView, IstioAuthzView,
@@ -445,6 +447,12 @@ async fn namespace_ops_menu(
         Box::new(ConfigCheck {
             namespace: ns.clone(),
         }),
+        Box::new(ConfigMapShow {
+            namespace: ns.clone(),
+        }),
+        Box::new(SecretShow {
+            namespace: ns.clone(),
+        }),
         Box::new(ImageCheck {
             namespace: ns.clone(),
         }),
@@ -472,6 +480,8 @@ async fn namespace_ops_menu(
             "events",
             "endpoints",
             "configcheck",
+            "configmap",
+            "secret",
             "imagecheck",
             "can-i",
             "istio-sidecar",
