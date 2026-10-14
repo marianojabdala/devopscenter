@@ -3,7 +3,7 @@
 //! prints command results.
 
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use clap::ValueEnum;
@@ -59,9 +59,13 @@ pub fn render(output: &Output) {
 }
 
 /// Re-render the output stored by the last [`render`] call, in the currently
-/// configured format, and write it to `path`. `Err` with a human-readable
-/// message if there's nothing to save yet, or the write fails.
-pub fn save_last(path: &Path) -> Result<(), String> {
+/// configured format, and write it to `path`. On success, returns the
+/// *absolute* path actually written to — the REPL can be running from any
+/// directory, so echoing back the (possibly relative) path the user typed
+/// isn't enough to tell them where the file landed. `Err` with a
+/// human-readable message if there's nothing to save yet, or the write
+/// fails.
+pub fn save_last(path: &Path) -> Result<PathBuf, String> {
     let output = LAST
         .lock()
         .ok()
@@ -72,7 +76,12 @@ pub fn save_last(path: &Path) -> Result<(), String> {
         OutputFormat::Slack => render_table_string(&output, ASCII_FULL),
         OutputFormat::Json => render_json_string(&output),
     };
-    std::fs::write(path, text).map_err(|err: io::Error| format!("writing {path:?}: {err}"))
+    std::fs::write(path, text).map_err(|err: io::Error| format!("writing {path:?}: {err}"))?;
+    Ok(path.canonicalize().unwrap_or_else(|_| {
+        std::env::current_dir()
+            .map(|dir| dir.join(path))
+            .unwrap_or_else(|_| path.to_path_buf())
+    }))
 }
 
 fn print_table(output: &Output, preset: &str) {
@@ -178,6 +187,17 @@ pub fn note(msg: &str) {
     println!("{}", msg.cyan());
 }
 
+/// Confirmation that an out-of-band REPL action actually happened (`save`
+/// wrote a file, `output` switched formats) — always printed, in every
+/// format, unlike `note`. These aren't command *data*, so there's nothing
+/// for them to corrupt in JSON mode; silently dropping them (as `note`
+/// would) means a `save` in JSON mode gives no feedback at all, success or
+/// failure. Printed to stderr, like `error`, so it never lands in a piped
+/// `--output json` stdout stream.
+pub fn confirm(msg: &str) {
+    eprintln!("{}", msg.green());
+}
+
 /// Error line — always goes to stderr, so it never corrupts JSON stdout.
 pub fn error(msg: &str) {
     eprintln!("{}", msg.red());
@@ -263,7 +283,8 @@ mod tests {
         set_format(OutputFormat::Json);
         render(&Output::Text("hello".into()));
         let path = std::env::temp_dir().join("devopscenter-test-save.json");
-        save_last(&path).unwrap();
+        let resolved = save_last(&path).unwrap();
+        assert!(resolved.is_absolute());
         let written = std::fs::read_to_string(&path).unwrap();
         assert_eq!(written, "{\n  \"message\": \"hello\"\n}");
         std::fs::remove_file(&path).unwrap();

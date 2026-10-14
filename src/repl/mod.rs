@@ -136,15 +136,15 @@ fn handle_output_command(verb: &str, fmt_arg: Option<&str>) -> bool {
     match fmt_arg {
         Some("table") => {
             view::set_format(view::OutputFormat::Table);
-            view::note("Output format: table");
+            view::confirm("Output format: table");
         }
         Some("json") => {
             view::set_format(view::OutputFormat::Json);
-            view::note("Output format: json");
+            view::confirm("Output format: json");
         }
         Some("slack") => {
             view::set_format(view::OutputFormat::Slack);
-            view::note("Output format: slack (plain ASCII borders, paste into a code block)");
+            view::confirm("Output format: slack (plain ASCII borders, paste into a code block)");
         }
         _ => view::error("usage: output <table|json|slack>"),
     }
@@ -170,7 +170,7 @@ fn handle_save_command(verb: &str, path_arg: Option<&str>) -> bool {
     }
     match path_arg {
         Some(path) => match view::save_last(std::path::Path::new(path)) {
-            Ok(()) => view::note(&format!("Saved to {path}")),
+            Ok(resolved) => view::confirm(&format!("Saved to {}", resolved.display())),
             Err(err) => view::error(&err),
         },
         None => view::error("usage: save <path>"),
@@ -190,20 +190,103 @@ fn try_handle_save_line(line: &str) -> bool {
 
 /// Run `args` against the first matching command. `false` if no command owns
 /// the verb (caller prints its level's "not found" message).
+/// Shown (and animated) on stderr for as long as `fut` is pending, then
+/// cleared — so a slow API call looks like it's working rather than a frozen
+/// prompt. Cleared the same way either way (success or error), since the
+/// caller still has to print its own result/error afterwards.
+async fn with_spinner<F: std::future::Future>(label: &str, fut: F) -> F::Output {
+    use std::io::Write;
+    const FRAMES: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+    tokio::pin!(fut);
+    let mut ticks = tokio::time::interval(std::time::Duration::from_millis(80));
+    let mut frame = 0usize;
+    loop {
+        tokio::select! {
+            biased;
+            result = &mut fut => {
+                eprint!("\r\x1b[K");
+                let _ = std::io::stderr().flush();
+                return result;
+            }
+            _ = ticks.tick() => {
+                eprint!("\r{} {label}", FRAMES[frame % FRAMES.len()]);
+                let _ = std::io::stderr().flush();
+                frame += 1;
+            }
+        }
+    }
+}
+
+/// `-w` / `--watch` / `--watch=<secs>` as the trailing argument → the
+/// interval in seconds (default 15), with that argument stripped from the
+/// returned args. Not a live Kubernetes watch stream — a polling refresh,
+/// the same idea as the Unix `watch` command wrapped around `kubectl get`.
+fn extract_watch_flag(args: &[String]) -> (Vec<String>, Option<u64>) {
+    let Some(last) = args.last() else {
+        return (args.to_vec(), None);
+    };
+    let interval = match last.as_str() {
+        "-w" | "--watch" => Some(15),
+        other => other
+            .strip_prefix("--watch=")
+            .or_else(|| other.strip_prefix("-w="))
+            .and_then(|secs| secs.parse().ok()),
+    };
+    let mut args = args.to_vec();
+    if interval.is_some() {
+        args.pop();
+    }
+    (args, interval)
+}
+
+/// Run `cmd` once against `args`, showing a spinner while it's in flight.
+async fn run_once(cmd: &dyn Command, cluster: &ClusterClient, args: &[String]) {
+    match with_spinner("Fetching...", cmd.run(cluster, args)).await {
+        Ok(output) => view::render(&output),
+        Err(err) => view::error(&format!("{err:#}")),
+    }
+}
+
+/// Re-runs `cmd` every `interval_secs`, clearing the screen each time, until
+/// Ctrl-C. Lets `pods -w` (or any `dispatch`-driven command/view) replace
+/// manually re-typing the same command to watch a rollout progress.
+async fn run_watch(
+    cmd: &dyn Command,
+    cluster: &ClusterClient,
+    args: &[String],
+    interval_secs: u64,
+) {
+    let interval = std::time::Duration::from_secs(interval_secs);
+    loop {
+        print!("\x1b[2J\x1b[H"); // clear screen, cursor to top-left
+        println!(
+            "Every {interval_secs}s: {}    {}",
+            args.join(" "),
+            k8s_openapi::jiff::Timestamp::now()
+        );
+        println!();
+        run_once(cmd, cluster, args).await;
+        println!("\n(Ctrl-C to stop watching)");
+        tokio::select! {
+            _ = tokio::time::sleep(interval) => {}
+            _ = tokio::signal::ctrl_c() => break,
+        }
+    }
+}
+
 async fn dispatch(cmds: &[Box<dyn Command>], cluster: &ClusterClient, args: &[String]) -> bool {
     let Some(verb) = args.first() else {
         return true;
     };
-    match cmds.iter().find(|c| c.name() == verb) {
-        Some(cmd) => {
-            match cmd.run(cluster, args).await {
-                Ok(output) => view::render(&output),
-                Err(err) => view::error(&format!("{err:#}")),
-            }
-            true
-        }
-        None => false,
+    let Some(cmd) = cmds.iter().find(|c| c.name() == verb) else {
+        return false;
+    };
+    let (args, watch_interval) = extract_watch_flag(args);
+    match watch_interval {
+        Some(secs) => run_watch(cmd.as_ref(), cluster, &args, secs).await,
+        None => run_once(cmd.as_ref(), cluster, &args).await,
     }
+    true
 }
 
 fn help_entries(cmds: &[Box<dyn Command>]) -> Vec<(&'static str, &'static str)> {
@@ -218,6 +301,10 @@ fn verbs(cmds: &[Box<dyn Command>]) -> Vec<&'static str> {
 pub async fn run(registry: ClusterRegistry) -> Result<()> {
     let mut sess = Session::new();
     view::note("Welcome to Devops Center !");
+    view::note(
+        "Tip: append -w or --watch=<secs> to any command (e.g. `pods -w`) to poll it \
+         every 15s — Ctrl-C to stop.",
+    );
     let prompt =
         LevelPrompt::with_toolbar("devops_center", &["kube", "output", "save", "help", "exit"]);
 
@@ -343,10 +430,12 @@ async fn context_menu(sess: &mut Session, cluster: &ClusterClient) -> Result<()>
                     "ns" => namespaces_menu(sess, cluster).await?,
                     "search" => search_menu(sess, cluster).await?,
                     "whois" => whois_menu(sess, cluster).await?,
-                    "warnings" => match Warnings.run(cluster, &args).await {
-                        Ok(output) => view::render(&output),
-                        Err(err) => view::error(&format!("{err:#}")),
-                    },
+                    "warnings" => {
+                        match with_spinner("Fetching...", Warnings.run(cluster, &args)).await {
+                            Ok(output) => view::render(&output),
+                            Err(err) => view::error(&format!("{err:#}")),
+                        }
+                    }
                     "views" => views_menu(sess, cluster).await?,
                     _ => view::error("Command not found!!!"),
                 }
@@ -550,7 +639,7 @@ async fn search_menu(sess: &mut Session, cluster: &ClusterClient) -> Result<()> 
                     continue;
                 }
                 let args = vec!["search".to_string(), query.to_string()];
-                match search.run(cluster, &args).await {
+                match with_spinner("Searching...", search.run(cluster, &args)).await {
                     Ok(output) => view::render(&output),
                     Err(err) => view::error(&format!("{err:#}")),
                 }
@@ -589,7 +678,7 @@ async fn whois_menu(sess: &mut Session, cluster: &ClusterClient) -> Result<()> {
                     continue;
                 }
                 let args = vec!["whois".to_string(), query.to_string()];
-                match whois.run(cluster, &args).await {
+                match with_spinner("Looking up...", whois.run(cluster, &args)).await {
                     Ok(output) => view::render(&output),
                     Err(err) => view::error(&format!("{err:#}")),
                 }
@@ -670,6 +759,40 @@ mod tests {
     fn tokens_splits_on_any_whitespace_and_trims() {
         assert_eq!(tokens("  logs   0.1  "), vec!["logs", "0.1"]);
         assert!(tokens("   ").is_empty());
+    }
+
+    #[test]
+    fn extract_watch_flag_recognises_bare_and_long_forms_with_default_interval() {
+        let (args, interval) = extract_watch_flag(&["pods".into(), "-w".into()]);
+        assert_eq!(args, vec!["pods".to_string()]);
+        assert_eq!(interval, Some(15));
+
+        let (args, interval) = extract_watch_flag(&["pods".into(), "--watch".into()]);
+        assert_eq!(args, vec!["pods".to_string()]);
+        assert_eq!(interval, Some(15));
+    }
+
+    #[test]
+    fn extract_watch_flag_recognises_a_custom_interval() {
+        let (args, interval) =
+            extract_watch_flag(&["pods".into(), "web".into(), "--watch=5".into()]);
+        assert_eq!(args, vec!["pods".to_string(), "web".to_string()]);
+        assert_eq!(interval, Some(5));
+    }
+
+    #[test]
+    fn extract_watch_flag_leaves_args_untouched_when_absent_or_unparseable() {
+        let (args, interval) = extract_watch_flag(&["pods".into(), "web".into()]);
+        assert_eq!(args, vec!["pods".to_string(), "web".to_string()]);
+        assert_eq!(interval, None);
+
+        let (args, interval) = extract_watch_flag(&["pods".into(), "--watch=soon".into()]);
+        assert_eq!(args, vec!["pods".to_string(), "--watch=soon".to_string()]);
+        assert_eq!(interval, None);
+
+        let (args, interval) = extract_watch_flag(&[]);
+        assert!(args.is_empty());
+        assert_eq!(interval, None);
     }
 
     #[test]
